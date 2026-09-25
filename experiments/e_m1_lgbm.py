@@ -16,7 +16,7 @@ from src.config import SEED, WORK_DIR
 from src.evalx import candidate_metrics, log_experiment, macro_f05_pairs, truth_pairs
 from src.features import FEATURES, pair_features
 
-K_TFIDF = int(sys.argv[1]) if len(sys.argv) > 1 else 20
+K_TFIDF = int(sys.argv[1]) if len(sys.argv) > 1 else 5
 PARAMS = dict(objective="binary", learning_rate=0.08, num_leaves=63, min_data_in_leaf=50,
               feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, seed=SEED, verbose=-1, num_threads=8)
 ROUNDS = 400
@@ -50,7 +50,15 @@ def main() -> None:
     recs = pl.concat([pl.read_parquet(WORK_DIR / f"norm/train_s{s}.parquet", columns=NORM) for s in (2, 3)])
     recs = recs.join(cands.select(pl.col("rec").alias("entity_id")).unique(), on="entity_id")
     tf_ = time.time()
-    feats = pair_features(cands, s1, recs)
+    # Features in chunks of whole records (a record's candidates stay together, so its
+    # rank/margin features are exact); keep only compact numeric columns (8 GB machine).
+    cands = cands.with_columns((pl.col("rec").hash(SEED) % 8).alias("chunk"))
+    chunks = []
+    for (_,), c in cands.group_by("chunk"):
+        f = pair_features(c.drop("chunk"), s1, recs)
+        chunks.append(f.select("s1", "rec", *[pl.col(x).cast(pl.Float32) for x in FEATURES]))
+    feats = pl.concat(chunks)
+    del chunks
     print(f"features: {feats.height:,} pairs in {time.time() - tf_:.0f}s", flush=True)
     t_pairs = truth.drop_nulls().with_columns(pl.lit(1).alias("y"))
     feats = feats.join(t_pairs, on=["s1", "rec"], how="left").with_columns(pl.col("y").fill_null(0))
