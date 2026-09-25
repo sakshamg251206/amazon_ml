@@ -26,3 +26,30 @@ def test_house_no_variants():
     assert house_no("3906a 33rd Ter, Topeka, Kansas") == "3906"
     assert house_no("OH, EUCLID AVE, EUCLID") == ""
     assert house_no("") == ""
+
+
+from src.normalize import name_tokens, nums, addr_parts, is_nonlatin
+
+
+def test_name_tokens_strips_domains_tags_legal_and_keeps_order():
+    assert name_tokens("tuckermetrotransalta.com") == ["tuckermetrotransalta"]
+    assert name_tokens(">> www.shreethreads.com") == ["shreethreads"]
+    assert name_tokens("surgical care associates of topeka inc #35740") == [
+        "surgical", "care", "associates", "topeka"]
+    assert name_tokens("LIMITED SUNBEAM EAE") == ["sunbeam", "eae"]
+
+
+def test_nums_all_numbers_unique_in_order_leading_zeros_stripped():
+    assert nums("Door No 276 H 15South Extn Part I") == ["276", "15"]
+    assert nums("09-9-232/1/A/1, Ramnagar") == ["9", "232", "1"]
+    assert nums("") == []
+
+
+def test_addr_parts_splits_on_commas_and_cleans():
+    assert addr_parts("OH, EUCLID AVE, EUCLID") == ["oh", "euclid ave", "euclid"]
+    assert addr_parts(" , N/A") == ["n a"]
+
+
+def test_is_nonlatin():
+    assert is_nonlatin("सिल्वर फाउंडेशन")
+    assert not is_nonlatin("Silver Fóundation Lìmited")
