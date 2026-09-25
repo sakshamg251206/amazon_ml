@@ -1,3 +1,9 @@
 student_resource/dataset/
 .DS_Store
 __MACOSX/
+work/
+output/
+.venv/
+__pycache__/
+.pytest_cache/
+.superpowers/
