@@ -4,7 +4,8 @@ Views (cosine similarity on L2-normalised TF-IDF vectors):
   name : char 3-grams of the core name (typos, spacing, transliteration noise)
   addr : word 1-2-grams of the cleaned address
   comb : sqrt(0.6)*name ++ sqrt(0.4)*addr, so comb cosine = 0.6*cos_name + 0.4*cos_addr
-Each record keeps its top-k S1 under the name view and under the combined view.
+Each record keeps its top-k S1 under the name view, the combined view and (optionally)
+the address-only view.
 """
 import numpy as np
 import polars as pl
@@ -29,7 +30,7 @@ def _topk(q: sp.csr_matrix, idx: sp.csr_matrix, k: int, view: str) -> pl.DataFra
     return pl.DataFrame({"r": m.row.astype(np.int32), "s": m.col.astype(np.int32), view: m.data})
 
 
-def tfidf_candidates(s1: pl.DataFrame, recs: pl.DataFrame, k_name: int, k_comb: int) -> pl.DataFrame:
+def tfidf_candidates(s1: pl.DataFrame, recs: pl.DataFrame, k_name: int, k_comb: int, k_addr: int = 0) -> pl.DataFrame:
     """s1/recs need columns name_tok, addr. Returns (r, s, cos_name, cos_comb) with r/s row indices
     into recs/s1. Cosines are filled for every returned pair, whichever view retrieved it."""
     if recs.height == 0 or s1.height == 0:
@@ -41,8 +42,10 @@ def tfidf_candidates(s1: pl.DataFrame, recs: pl.DataFrame, k_name: int, k_comb: 
                   analyzer="word", ngram_range=(1, 2), min_df=1, sublinear_tf=True)
     c1 = sp.hstack([np.sqrt(W_NAME) * n1, np.sqrt(W_ADDR) * a1]).tocsr()
     cr = sp.hstack([np.sqrt(W_NAME) * nr, np.sqrt(W_ADDR) * ar]).tocsr()
-    pairs = pl.concat([_topk(nr, n1, k_name, "x").select("r", "s"),
-                       _topk(cr, c1, k_comb, "x").select("r", "s")]).unique()
+    views = [_topk(nr, n1, k_name, "x"), _topk(cr, c1, k_comb, "x")]
+    if k_addr:  # address-only view: catches renamed businesses (name changed, address kept)
+        views.append(_topk(ar, a1, k_addr, "x"))
+    pairs = pl.concat([v.select("r", "s") for v in views]).unique()
     r, s = pairs["r"].to_numpy(), pairs["s"].to_numpy()
     cos_n = np.asarray(nr[r].multiply(n1[s]).sum(axis=1)).ravel()
     cos_a = np.asarray(ar[r].multiply(a1[s]).sum(axis=1)).ravel()

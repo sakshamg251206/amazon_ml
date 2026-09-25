@@ -32,3 +32,10 @@ def test_no_records_returns_empty_frame():
     recs = pl.DataFrame({"name_tok": [], "addr": []}, schema={"name_tok": pl.String, "addr": pl.String})
     c = tfidf_candidates(S1, recs, k_name=2, k_comb=2)
     assert c.height == 0 and "cos_comb" in c.columns
+
+
+def test_address_view_retrieves_renamed_business():
+    recs = pl.DataFrame({"name_tok": ["zzzz qqqq"], "addr": ["3906 33rd terrace topeka ks"]})
+    without = tfidf_candidates(S1, recs, k_name=1, k_comb=1)
+    with_addr = tfidf_candidates(S1, recs, k_name=1, k_comb=1, k_addr=1)
+    assert 1 in with_addr["s"].to_list() and with_addr.height >= without.height

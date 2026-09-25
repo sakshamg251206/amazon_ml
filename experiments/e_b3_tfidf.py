@@ -18,7 +18,7 @@ from src.partition import infer_state, s1_state
 
 COLS = ["entity_id", "country", "name_tok", "addr", "parts", "hn", "name_key", "name_ns"]
 FRAC = 0.15
-K_NAME, K_COMB = 20, 50
+K_NAME, K_COMB, K_ADDR = 10, 20, 10
 
 
 def sample_partitions(s1: pl.DataFrame) -> set[tuple[str, str]]:
@@ -60,6 +60,9 @@ def main() -> None:
         keys.append(rk.filter(pl.col(k).is_not_null()).select(pl.col("entity_id").alias("rec"), k).join(b, on=k).select("s1", "rec"))
     keys = pl.concat(keys).unique()
     del rk, s1k
+    recs = recs.join(in_sample, on=["country", "state"])  # TF-IDF only needs sampled partitions
+    recs = recs.with_row_index("gidx")
+    s1_s = s1_s.with_row_index("gidx")
     log_experiment("E-B3:keys_only", candidate_metrics(keys, truth, ids), tk)
 
     # TF-IDF channel, one partition at a time.
@@ -68,16 +71,23 @@ def main() -> None:
     for (country, state), g in s1_s.group_by("country", "state"):
         q = recs.filter((pl.col("country") == country) & (pl.col("state") == state))
         n_q += q.height
-        c = tfidf_candidates(g, q, K_NAME, K_COMB)
+        tp_ = time.time()
+        c = tfidf_candidates(g, q, K_NAME, K_COMB, K_ADDR)
+        print(f"  {country}/{state}: {g.height:,} S1 x {q.height:,} recs -> {c.height:,} pairs in {time.time() - tp_:.0f}s", flush=True)
+        # keep integer row ids (global) while accumulating; map to string ids once at the end
         out.append(c.with_columns(
-            pl.Series("s1", g["entity_id"].to_numpy()[c["s"].to_numpy()]),
-            pl.Series("rec", q["entity_id"].to_numpy()[c["r"].to_numpy()]),
-        ).select("s1", "rec", "cos_name", "cos_addr", "cos_comb"))
-    tf = pl.concat(out).with_columns(
+            pl.Series("gs", g["gidx"].to_numpy()[c["s"].to_numpy()]),
+            pl.Series("gr", q["gidx"].to_numpy()[c["r"].to_numpy()]),
+        ).select("gs", "gr", "cos_name", "cos_addr", "cos_comb"))
+    s1_ids, rec_ids = s1_s["entity_id"], recs["entity_id"]
+    tf = pl.concat(out)
+    tf = tf.with_columns(pl.Series("s1", s1_ids.to_numpy()[tf["gs"].to_numpy()]),
+                         pl.Series("rec", rec_ids.to_numpy()[tf["gr"].to_numpy()])).drop("gs", "gr")
+    tf = tf.with_columns(
         pl.col("cos_comb").rank("ordinal", descending=True).over("rec").alias("rank_comb"))
     tf.write_parquet(WORK_DIR / "e_b3_tfidf_cands.parquet")
     dt = time.time() - tt
-    for k in (5, 10, 20, 50):
+    for k in (1, 5, 10, 20):
         m = candidate_metrics(tf.filter(pl.col("rank_comb") <= k), truth, ids)
         log_experiment(f"E-B3:tfidf_comb@{k}", m, tt)
     m = candidate_metrics(tf, truth, ids)
