@@ -1,0 +1,93 @@
+"""E-M1: learned matcher on the E-B3 candidate set.
+
+Hypothesis: country-agnostic fuzzy + number + rank features scored by LightGBM, decoded with
+"each record -> its best S1 if p >= t", beat v0_rule (0.5950) by a wide margin.
+Validation: 2-fold split BY PARTITION (fit on half of the sampled states, predict the other half,
+swap), so every S1 is scored out-of-fold. The same OOF scores are saved for decoding experiments.
+"""
+import sys
+import time
+
+import lightgbm as lgb
+import numpy as np
+import polars as pl
+
+from src.config import SEED, WORK_DIR
+from src.evalx import candidate_metrics, log_experiment, macro_f05_pairs, truth_pairs
+from src.features import FEATURES, pair_features
+
+K_TFIDF = int(sys.argv[1]) if len(sys.argv) > 1 else 20
+PARAMS = dict(objective="binary", learning_rate=0.08, num_leaves=63, min_data_in_leaf=50,
+              feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, seed=SEED, verbose=-1, num_threads=8)
+ROUNDS = 400
+NORM = ["entity_id", "name_tok", "addr", "nums", "hn", "name_ns", "name_key", "nonlatin", "empty_addr"]
+
+
+def decode(scored: pl.DataFrame, t: float) -> pl.DataFrame:
+    """Each record keeps only its highest-probability S1, if p >= t."""
+    best = scored.sort("p", descending=True).group_by("rec", maintain_order=True).first()
+    return best.filter(pl.col("p") >= t).select("s1", "rec")
+
+
+def main() -> None:
+    t0 = time.time()
+    sample = pl.read_parquet(WORK_DIR / "e_b3_sample_s1.parquet")
+    ids = sample["entity_id"]
+    truth = truth_pairs()
+    tf = pl.read_parquet(WORK_DIR / "e_b3_tfidf_cands.parquet")
+    union = pl.read_parquet(WORK_DIR / "e_b3_union_cands.parquet")
+    keys = union.join(tf.select("s1", "rec"), on=["s1", "rec"], how="anti").with_columns(pl.lit(True).alias("in_keys"))
+    cands = pl.concat([
+        tf.filter(pl.col("rank_comb") <= K_TFIDF).select("s1", "rec", "cos_name", "cos_addr", "cos_comb")
+          .with_columns(pl.lit(False).alias("in_keys")),
+        keys.with_columns(pl.lit(None, pl.Float32).alias(c) for c in ("cos_name", "cos_addr", "cos_comb"))
+            .select("s1", "rec", "cos_name", "cos_addr", "cos_comb", "in_keys"),
+    ], how="vertical_relaxed")
+    cm = candidate_metrics(cands, truth, ids)
+    log_experiment(f"E-M1:cands_k{K_TFIDF}", {**cm, "n_pairs": cands.height}, t0)
+
+    s1 = pl.read_parquet(WORK_DIR / "norm/train_s1.parquet", columns=NORM).join(sample.select("entity_id"), on="entity_id")
+    recs = pl.concat([pl.read_parquet(WORK_DIR / f"norm/train_s{s}.parquet", columns=NORM) for s in (2, 3)])
+    recs = recs.join(cands.select(pl.col("rec").alias("entity_id")).unique(), on="entity_id")
+    tf_ = time.time()
+    feats = pair_features(cands, s1, recs)
+    print(f"features: {feats.height:,} pairs in {time.time() - tf_:.0f}s", flush=True)
+    t_pairs = truth.drop_nulls().with_columns(pl.lit(1).alias("y"))
+    feats = feats.join(t_pairs, on=["s1", "rec"], how="left").with_columns(pl.col("y").fill_null(0))
+    feats = feats.join(sample.select(pl.col("entity_id").alias("s1"), "country", "state"), on="s1")
+
+    parts = sorted(set(feats.select("country", "state").unique().rows()))
+    rng = np.random.default_rng(SEED)
+    fold_of = {p: int(f) for p, f in zip(parts, rng.permutation(len(parts)) % 2)}
+    feats = feats.with_columns(pl.struct("country", "state").map_elements(
+        lambda r: fold_of[(r["country"], r["state"])], return_dtype=pl.Int8).alias("fold"))
+
+    oof = []
+    for f in (0, 1):
+        tr, va = feats.filter(pl.col("fold") != f), feats.filter(pl.col("fold") == f)
+        X = tr.select(FEATURES).to_numpy().astype(np.float32)
+        model = lgb.train(PARAMS, lgb.Dataset(X, tr["y"].to_numpy()), ROUNDS)
+        p = model.predict(va.select(FEATURES).to_numpy().astype(np.float32))
+        oof.append(va.select("s1", "rec", "country", "y").with_columns(pl.Series("p", p)))
+        if f == 0:
+            imp = sorted(zip(FEATURES, model.feature_importance("gain")), key=lambda x: -x[1])[:10]
+            print("top gain:", [(n, round(g / sum(model.feature_importance('gain')), 3)) for n, g in imp], flush=True)
+    scored = pl.concat(oof)
+    scored.write_parquet(WORK_DIR / f"e_m1_oof_k{K_TFIDF}.parquet")
+
+    best = None
+    for t in (0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95):
+        m = macro_f05_pairs(decode(scored, t), truth, ids)
+        print(f"t={t:.2f} f05={m['f05']:.4f} P={m['precision']:.4f} R={m['recall']:.4f}", flush=True)
+        if best is None or m["f05"] > best[1]["f05"]:
+            best = (t, m)
+    t, m = best
+    log_experiment(f"E-M1:lgbm_k{K_TFIDF}", {**m, "t": t, "oracle_f05": cm["oracle_f05"],
+                                             "cand_recall": cm["cand_recall"]}, t0)
+    pred = decode(scored, t)
+    for (c,), g in sample.group_by("country"):
+        log_experiment(f"E-M1:lgbm_k{K_TFIDF}:{c}", macro_f05_pairs(pred, truth, g["entity_id"]), t0)
+
+
+if __name__ == "__main__":
+    main()
