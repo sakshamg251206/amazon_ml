@@ -1,0 +1,10 @@
+id,title,type,credibility,recency,bias,url
+01,SanthoshReddy STATUS.md,primary,high,2026-09,low,https://raw.githubusercontent.com/SanthoshReddy352/Amazon-ML-Challenge-2026/main/STATUS.md
+02,SanthoshReddy features.py,primary-code,high,2026-09,low,https://raw.githubusercontent.com/SanthoshReddy352/Amazon-ML-Challenge-2026/main/code/business_entity_resolution/src/features.py
+03,SanthoshReddy refine.py,primary-code,high,2026-09,low,https://raw.githubusercontent.com/SanthoshReddy352/Amazon-ML-Challenge-2026/main/code/business_entity_resolution/src/refine.py
+04,Akash-bardia README,practitioner,medium-low,2026-09,medium,https://raw.githubusercontent.com/Akash-bardia/amazon-ml-challenge-2026/main/README.md
+05,Prior report (vishwajit/Epic021),secondary,medium,2026-09,low,AMAZON_ML_DEEP_RESEARCH.md
+06,Bhattacharya & Getoor 2007,academic,high,2007,low,https://linqs.org/assets/resources/bhattacharya-tkdd07.pdf
+07,One-to-one ER matching VLDBJ 2023,academic,high,2023,low,https://dl.acm.org/doi/10.1007/s00778-023-00791-3
+08,Our OOF error profile,primary-data,high,2026-09,low,local
+09,vishwajit repo (404),primary,n/a,n/a,n/a,https://github.com/vishwajitsarnobat/amazon-ml-challenge-2026

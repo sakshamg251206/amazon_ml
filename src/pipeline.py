@@ -20,6 +20,7 @@ from src.block import key_candidates, tfidf_candidates
 from src.config import OUTPUT_DIR, SEED, WORK_DIR
 from src.decode import ef_decode, exclusive
 from src.features import FEATURES, pair_features
+from src.features2 import NEW, competition_features, diff_features, s1_maxima
 from src.partition import infer_state, learn_aliases, s1_state
 
 K_NAME, K_COMB, K_ADDR, K_KEEP = 10, 20, 10, 5
@@ -32,6 +33,10 @@ FEAT_COLS = ["entity_id", "name_tok", "addr", "nums", "hn", "name_ns", "name_key
 MODEL = WORK_DIR / "model_m1.txt"
 MODEL_M2 = WORK_DIR / "model_m2.txt"
 PRUNE = 0.01  # stage-2 input: pairs with p1 >= PRUNE
+# v1 = 34 pair features (E-M1); v2 = + 14 competition/difference features (E-F2: M1 0.9429 -> 0.9590)
+V1 = dict(feat="feat", m1=MODEL, m1_cols=FEATURES, ens="ens", tag="sub2", train=WORK_DIR / "e_m1_feats_k5" / "*.parquet")
+V2 = dict(feat="feat2", m1=WORK_DIR / "model_m1b.txt", m1_cols=FEATURES + NEW, ens="ens2", tag="sub3",
+          train=WORK_DIR / "e_f2_feats.parquet")
 
 
 def _dir(split: str, name: str):
@@ -109,11 +114,32 @@ def features(split: str) -> None:
     print(f"features done in {time.time() - t0:.0f}s", flush=True)
 
 
-def train() -> None:
-    feats = pl.read_parquet(WORK_DIR / "e_m1_feats_k5" / "*.parquet", columns=FEATURES + ["y"])
-    model = lgb.train(PARAMS, lgb.Dataset(feats.select(FEATURES).to_numpy(), feats["y"].to_numpy()), ROUNDS)
-    model.save_model(str(MODEL))
-    print(f"trained on {feats.height:,} pairs -> {MODEL}", flush=True)
+def features2(split: str) -> None:
+    """Add the E-F2 features to every v1 bucket (no re-blocking). S1-side maxima come from one
+    streaming pass over all buckets; record-side features are exact per bucket (whole records)."""
+    t0 = time.time()
+    src, out = _dir(split, "feat"), _dir(split, "feat2")
+    best = s1_maxima(pl.scan_parquet(src / "*.parquet")).collect(engine="streaming")
+    s1 = _norm(split, 1, ["entity_id", "name_tok", "hn"])
+    recs = pl.concat([pl.scan_parquet(WORK_DIR / f"norm/{split}_s{s}.parquet").select("entity_id", "name_tok", "hn") for s in (2, 3)])
+    for b in range(N_BUCKETS):
+        path = out / f"b{b:02d}.parquet"
+        if path.exists():
+            continue
+        f = pl.read_parquet(src / f"b{b:02d}.parquet")
+        comp = competition_features(f.select("s1", "rec", "cos_name", "cos_addr", "cos_comb"), best)
+        recs_b = recs.filter((pl.col("entity_id").hash(SEED) % N_BUCKETS) == b).collect()
+        diff = diff_features(f.select("s1", "rec"), s1, recs_b)
+        f.join(comp, on=["s1", "rec"], how="left").join(diff, on=["s1", "rec"], how="left").write_parquet(path)
+    print(f"features2 done in {time.time() - t0:.0f}s", flush=True)
+
+
+def train(v2: bool = False) -> None:
+    cfg = V2 if v2 else V1
+    feats = pl.read_parquet(cfg["train"], columns=cfg["m1_cols"] + ["y"])
+    model = lgb.train(PARAMS, lgb.Dataset(feats.select(cfg["m1_cols"]).to_numpy(), feats["y"].to_numpy()), ROUNDS)
+    model.save_model(str(cfg["m1"]))
+    print(f"trained on {feats.height:,} pairs -> {cfg['m1']}", flush=True)
 
 
 def _write(split: str, matches: pl.DataFrame, out_dir) -> None:
@@ -130,18 +156,21 @@ def _write(split: str, matches: pl.DataFrame, out_dir) -> None:
            .write_csv(out_dir / name, separator="\t", quote_style="never")
 
 
-def decide(split: str, m2: bool = False, ens: bool = False) -> None:
+def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False) -> None:
     """M1 (+ optional stage 2) -> exclusive assignment -> expected-F0.5 decoding (src/decode.py).
     Stage 2 = M2 LightGBM, or with ens=True the E-E1 average of LightGBM + ExtraTrees + MLP.
     Validation (out-of-fold): M1 0.9429, M2 0.9488, ensemble 0.9510."""
+    cfg = V2 if v2 else V1
+    if v2 and m2 and not ens:
+        raise ValueError("v2 has no single-M2 model; use --ens")
     m2 = m2 or ens
     t0 = time.time()
-    m1 = lgb.Booster(model_file=str(MODEL))
+    m1 = lgb.Booster(model_file=str(cfg["m1"]))
     ex, pruned = [], []
-    s2_dir = _dir(split, "stage2")
-    for path in sorted(_dir(split, "feat").glob("*.parquet")):
+    s2_dir = _dir(split, "stage2" + ("_v2" if v2 else ""))
+    for path in sorted(_dir(split, cfg["feat"]).glob("*.parquet")):
         f = pl.read_parquet(path)
-        f = f.with_columns(pl.Series("p", m1.predict(f.select(FEATURES).to_numpy())))
+        f = f.with_columns(pl.Series("p", m1.predict(f.select(cfg["m1_cols"]).to_numpy())))
         if m2:  # stage 2 only needs pairs with p1 >= PRUNE (validated in E-M2b)
             f = f.filter(pl.col("p") >= PRUNE)
             f.write_parquet(s2_dir / path.name)
@@ -158,21 +187,21 @@ def decide(split: str, m2: bool = False, ens: bool = False) -> None:
         del comp, pruned
         if ens:
             import joblib
-            from experiments.e_e1_ensemble import ENS
-            weights = joblib.load(ENS / "final_weights.joblib")
-            models = {n: joblib.load(ENS / f"final_{n}.joblib") for n in weights}
+            ens_dir = WORK_DIR / cfg["ens"]
+            weights = joblib.load(ens_dir / "final_weights.joblib")
+            models = {n: joblib.load(ens_dir / f"final_{n}.joblib") for n in weights}
         else:
             model2 = lgb.Booster(model_file=str(MODEL_M2))
         for path in sorted(s2_dir.glob("*.parquet")):
             f = pl.read_parquet(path).drop("p").join(col, on=["s1", "rec"])
-            X = f.select(FEATURES + COLLECTIVE).to_numpy().astype(np.float32)
+            X = f.select(cfg["m1_cols"] + COLLECTIVE).to_numpy().astype(np.float32)
             if ens:
                 p2 = sum(w * models[n].predict_proba(X)[:, 1] for n, w in weights.items())
             else:
                 p2 = model2.predict(X)
             ex.append(exclusive(f.select("s1", "rec").with_columns(pl.Series("p", p2))))
     matches = ef_decode(pl.concat(ex))
-    out_dir = OUTPUT_DIR / ("sub2d_ens_ef" if ens else "sub2c_m2_ef" if m2 else "sub2b_m1_ef")
+    out_dir = OUTPUT_DIR / (cfg["tag"] + ("d_ens_ef" if ens else "c_m2_ef" if m2 else "b_m1_ef"))
     _write(split, matches, out_dir)
     s1c = pl.read_parquet(WORK_DIR / f"norm/{split}_s1.parquet", columns=["entity_id", "country"])
     has = s1c.with_columns(pl.col("entity_id").is_in(matches["s1"].unique().implode()).alias("has_match"))
@@ -183,14 +212,16 @@ def decide(split: str, m2: bool = False, ens: bool = False) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="test", choices=["train", "test"])
-    ap.add_argument("--stage", required=True, choices=["block", "features", "train", "decide", "all"])
+    ap.add_argument("--stage", required=True, choices=["block", "features", "features2", "train", "decide", "all"])
+    ap.add_argument("--v2", action="store_true", help="use the E-F2 feature set (feat2, model_m1b, ens2)")
     ap.add_argument("--m2", action="store_true", help="decide with the stage-2 (collective) model")
     ap.add_argument("--ens", action="store_true", help="decide with the stage-2 ensemble (E-E1)")
     a = ap.parse_args()
     stages = ["block", "features", "train", "decide"] if a.stage == "all" else [a.stage]
     for s in stages:
         {"block": lambda: block(a.split), "features": lambda: features(a.split),
-         "train": train, "decide": lambda: decide(a.split, a.m2, a.ens)}[s]()
+         "features2": lambda: features2(a.split), "train": lambda: train(a.v2),
+         "decide": lambda: decide(a.split, a.m2, a.ens, a.v2)}[s]()
 
 
 if __name__ == "__main__":
