@@ -20,7 +20,7 @@ from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifie
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import QuantileTransformer, StandardScaler
+from sklearn.preprocessing import KBinsDiscretizer, QuantileTransformer, StandardScaler
 
 from experiments.e_d1_decode import f05, ntrue_table
 from experiments.e_m2_collective import COLLECTIVE, collective
@@ -32,20 +32,22 @@ from src.features import FEATURES
 ENS = WORK_DIR / "ens"
 DATA = ENS / "data.parquet"
 COLS = FEATURES + COLLECTIVE
-THREADS = 3  # leave cores for the test pipeline running alongside
+SRC_OOF = WORK_DIR / "e_m1_oof_k5.parquet"            # stage-1 OOF probabilities (pruned at 0.01)
+SRC_FEATS = WORK_DIR / "e_m1_feats_k5" / "*.parquet"  # pair features for the same candidates
+THREADS = 7  # test pipeline finished: use the machine
 
 
 def build() -> None:
     from experiments.e_g1_twins import components
     ENS.mkdir(exist_ok=True)
-    scored = pl.read_parquet(WORK_DIR / "e_m1_oof_k5.parquet").filter(pl.col("p") >= 0.01)
+    scored = pl.read_parquet(SRC_OOF).filter(pl.col("p") >= 0.01)
     recs = pl.concat([pl.read_parquet(WORK_DIR / f"norm/train_s{s}.parquet",
                                       columns=["entity_id", "country", "name_key", "name_ns", "hn", "addr"]) for s in (2, 3)])
     comp = components(recs)
     del recs
     col = collective(scored, comp).with_columns(pl.col(c).cast(pl.Float32) for c in COLLECTIVE)
     del comp, scored
-    d = pl.scan_parquet(WORK_DIR / "e_m1_feats_k5" / "*.parquet").join(col.lazy(), on=["s1", "rec"]).collect()
+    d = pl.scan_parquet(SRC_FEATS).join(col.lazy(), on=["s1", "rec"]).collect()
     parts = sorted(set(d.select("country", "state").unique().rows()))
     fold_of = {p: int(f) for p, f in zip(parts, np.random.default_rng(SEED).permutation(len(parts)) % 2)}  # M1 folds
     d = d.join(pl.DataFrame({"country": [p[0] for p in parts], "state": [p[1] for p in parts],
@@ -186,6 +188,43 @@ def ens(models: list[str]) -> None:
     log_experiment("E-E1:ens:stack_lr_xfit", score(ps, d, nt), t0)
 
 
+# Round 2: one stronger config per model (logreg gets binned one-hot inputs = a GAM-like model).
+GRID["lgbm"]["d"] = lambda: _lgb(dict(learning_rate=0.03, num_leaves=255, min_data_in_leaf=100, feature_fraction=0.7, bagging_fraction=0.8), 1200)
+GRID["histgb"]["c"] = lambda: HistGradientBoostingClassifier(learning_rate=0.05, max_iter=1000, max_leaf_nodes=127, min_samples_leaf=50, l2_regularization=1.0, early_stopping=False, random_state=SEED)
+GRID["extratrees"]["c"] = lambda: _dense(ExtraTreesClassifier(n_estimators=300, min_samples_leaf=20, max_features=0.5, max_depth=28, n_jobs=THREADS, random_state=SEED))
+GRID["logreg"]["c"] = lambda: _dense(make_pipeline(KBinsDiscretizer(n_bins=16, encode="onehot", strategy="quantile", subsample=200_000, random_state=SEED), LogisticRegression(C=0.5, max_iter=500)))
+GRID["mlp"]["c"] = lambda: _dense(make_pipeline(_qt(), StandardScaler(), MLPClassifier((256, 128), alpha=1e-4, batch_size=4096, max_iter=25, random_state=SEED)))
+ROUND2 = {"lgbm": "d", "histgb": "c", "extratrees": "c", "logreg": "c", "mlp": "c"}
+BEST = ENS / "best_cfg.json"  # best config per model so far (round 1 winners by default)
+
+
+def _best_cfg() -> dict:
+    import json
+    return json.loads(BEST.read_text()) if BEST.exists() else {"lgbm": "b", "histgb": "a", "extratrees": "a", "logreg": "a", "mlp": "b"}
+
+
+def base2() -> None:
+    """Try each ROUND2 config; replace a model's cached OOF only if F0.5 improves."""
+    import json
+    d = pl.read_parquet(DATA)
+    X = d.select(COLS).to_numpy().astype(np.float32)
+    nt = ntrue_table()
+    best = _best_cfg()
+    for name, cfg in ROUND2.items():
+        if best.get(name) == cfg:
+            continue
+        old = score(pl.read_parquet(ENS / f"oof_{name}.parquet")["p"].to_numpy(), d, nt)["f05"]
+        t0 = time.time()
+        p = oof(GRID[name][cfg], d, X)
+        m = score(p, d, nt)
+        log_experiment(f"E-E1:{name}:{cfg}", m, t0)
+        if m["f05"] > old:
+            pl.DataFrame({"p": p}).write_parquet(ENS / f"oof_{name}.parquet")
+            best[name] = cfg
+        print(f"==> {name}: {cfg} {m['f05']:.4f} vs previous {old:.4f} -> keep {best[name]}", flush=True)
+        BEST.write_text(json.dumps(best))
+
+
 FINAL = {"lgbm": "b", "extratrees": "a", "mlp": "b"}  # chosen from E-E1 (histgb/logreg got ~0 weight)
 
 
@@ -207,6 +246,9 @@ if __name__ == "__main__":
     models = list(GRID)
     if stage == "ens3":
         ens(list(FINAL))
+    if stage == "round2":
+        base2()
+        ens(list(GRID))
     if stage == "final":
         final()
     if stage in ("build", "all") and not DATA.exists():
