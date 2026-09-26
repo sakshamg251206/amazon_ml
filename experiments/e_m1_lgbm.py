@@ -16,7 +16,7 @@ from src.config import SEED, WORK_DIR
 from src.evalx import candidate_metrics, log_experiment, macro_f05_pairs, truth_pairs
 from src.features import FEATURES, pair_features
 
-K_TFIDF = int(sys.argv[1]) if len(sys.argv) > 1 else 20
+K_TFIDF = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 5  # only when run directly
 PARAMS = dict(objective="binary", learning_rate=0.08, num_leaves=63, min_data_in_leaf=50,
               feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, seed=SEED, verbose=-1, num_threads=8)
 ROUNDS = 400
@@ -30,6 +30,7 @@ def decode(scored: pl.DataFrame, t: float) -> pl.DataFrame:
 
 
 def main() -> None:
+    """Stage 1: candidates -> labelled features on disk."""
     t0 = time.time()
     sample = pl.read_parquet(WORK_DIR / "e_b3_sample_s1.parquet")
     ids = sample["entity_id"]
@@ -50,17 +51,39 @@ def main() -> None:
     recs = pl.concat([pl.read_parquet(WORK_DIR / f"norm/train_s{s}.parquet", columns=NORM) for s in (2, 3)])
     recs = recs.join(cands.select(pl.col("rec").alias("entity_id")).unique(), on="entity_id")
     tf_ = time.time()
-    feats = pair_features(cands, s1, recs)
-    print(f"features: {feats.height:,} pairs in {time.time() - tf_:.0f}s", flush=True)
-    t_pairs = truth.drop_nulls().with_columns(pl.lit(1).alias("y"))
-    feats = feats.join(t_pairs, on=["s1", "rec"], how="left").with_columns(pl.col("y").fill_null(0))
-    feats = feats.join(sample.select(pl.col("entity_id").alias("s1"), "country", "state"), on="s1")
+    # Features in chunks of whole records (a record's candidates stay together, so its
+    # rank/margin features are exact); keep only compact numeric columns (8 GB machine).
+    cands = cands.with_columns((pl.col("rec").hash(SEED) % 8).alias("chunk"))
+    t_pairs = truth.drop_nulls().join(sample.select(pl.col("entity_id").alias("s1")), on="s1") \
+                   .with_columns(pl.lit(1, pl.Int8).alias("y"))
+    out_dir = WORK_DIR / f"e_m1_feats_k{K_TFIDF}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    part_of = sample.select(pl.col("entity_id").alias("s1"), "country", "state")
+    n_pairs = 0
+    for (i,), c in cands.group_by("chunk"):
+        f = pair_features(c.drop("chunk"), s1, recs)
+        f = f.select("s1", "rec", *[pl.col(x).cast(pl.Float32) for x in FEATURES]) \
+             .join(t_pairs, on=["s1", "rec"], how="left").with_columns(pl.col("y").fill_null(0)) \
+             .join(part_of, on="s1")
+        f.write_parquet(out_dir / f"part_{i}.parquet")  # stream to disk: never hold all chunks
+        n_pairs += f.height
+        del f
+    print(f"features: {n_pairs:,} pairs in {time.time() - tf_:.0f}s", flush=True)
+
+
+def train_eval() -> None:
+    """Stage 2 (fresh process): 2-fold-by-partition LightGBM, OOF decoding, threshold sweep."""
+    t0 = time.time()
+    feats = pl.read_parquet(WORK_DIR / f"e_m1_feats_k{K_TFIDF}" / "*.parquet")
+    sample = pl.read_parquet(WORK_DIR / "e_b3_sample_s1.parquet")
+    ids = sample["entity_id"]
 
     parts = sorted(set(feats.select("country", "state").unique().rows()))
     rng = np.random.default_rng(SEED)
     fold_of = {p: int(f) for p, f in zip(parts, rng.permutation(len(parts)) % 2)}
-    feats = feats.with_columns(pl.struct("country", "state").map_elements(
-        lambda r: fold_of[(r["country"], r["state"])], return_dtype=pl.Int8).alias("fold"))
+    folds = pl.DataFrame({"country": [p[0] for p in parts], "state": [p[1] for p in parts],
+                          "fold": [fold_of[p] for p in parts]}, schema_overrides={"fold": pl.Int8})
+    feats = feats.join(folds, on=["country", "state"])
 
     oof = []
     for f in (0, 1):
@@ -74,6 +97,8 @@ def main() -> None:
             print("top gain:", [(n, round(g / sum(model.feature_importance('gain')), 3)) for n, g in imp], flush=True)
     scored = pl.concat(oof)
     scored.write_parquet(WORK_DIR / f"e_m1_oof_k{K_TFIDF}.parquet")
+    del feats, tr, va, X
+    truth = truth_pairs()
 
     best = None
     for t in (0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95):
@@ -82,12 +107,14 @@ def main() -> None:
         if best is None or m["f05"] > best[1]["f05"]:
             best = (t, m)
     t, m = best
-    log_experiment(f"E-M1:lgbm_k{K_TFIDF}", {**m, "t": t, "oracle_f05": cm["oracle_f05"],
-                                             "cand_recall": cm["cand_recall"]}, t0)
+    log_experiment(f"E-M1:lgbm_k{K_TFIDF}", {**m, "t": t}, t0)
     pred = decode(scored, t)
     for (c,), g in sample.group_by("country"):
         log_experiment(f"E-M1:lgbm_k{K_TFIDF}:{c}", macro_f05_pairs(pred, truth, g["entity_id"]), t0)
 
 
 if __name__ == "__main__":
-    main()
+    if not (WORK_DIR / f"e_m1_feats_k{K_TFIDF}").exists():
+        main()
+    else:
+        train_eval()
