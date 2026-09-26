@@ -132,3 +132,24 @@ Each entry records the decision, the evidence behind it, and what it would cost 
 
   The mean is up in both folds (+0.0026 / +0.0032).
 - **Decision:** ship `decide --v2 --ens` → `output/sub3d_ens_ef/`. Final models are in `work/ens2/`.
+
+## D19 — Learned transliteration map features: rejected (E-T1)
+
+- **What was tried:** a map of 362 token mappings learned from 449k train true pairs (non-Latin record ↔ Latin S1; validation-sample S1 excluded), plus 4 features on the mapped name.
+- **Result:** M1 out-of-fold 0.9577 vs 0.9585 baseline (**−0.0008**). India fell 0.9481 → 0.9456 and recall dropped.
+- **Likely reason:** noisy mappings ("pra"→"pvt", "li"→"ltd", "mam"→"maa"), and making romanized fakes look *more* like their S1 costs precision.
+- **Decision:** switched off (`V3_TRANSLIT = False`). The code is kept in `src/translit.py`.
+
+## D20 — Name-only country-wide search for no-state records: rejected (E-B5, memory-safe rerun)
+
+- **Result:** blocking recall 0.9687 → 0.9714; oracle ceiling 0.9901 → 0.9909 (**+0.0008 at best**). Test-side cost is about 1 h.
+- **Why so small:** 3-grams in more than 2,000 S1 are dropped (needed for memory safety), and a top-5 among 1.3M names is crowded.
+- **Also:** the first, uncapped run (5% DF cap) pushed memory to about 27 GB compressed; the Mac rebooted.
+- **Agrees with:** SanthoshReddy v6 ("no gain").
+
+## D21 — Adaptive generic / rare name vocabulary (E-T2, user's tip)
+
+- **What:** per split and country, tokens in ≥ 0.1% of that split's S1 names are "generic" (label-free, so France gets its own list). Six features: extra/missing generic, extra/missing rare, core-name token-set similarity, core names equal.
+- **Result:** M1 out-of-fold **0.9594 vs 0.9585** (fold 0 +0.0003, fold 1 +0.0013). India +0.0019; precision and recall both up.
+- **Generic lists are stable train → test:** India 238 / 237, US 470 / 471.
+- **Decision:** kept. v3 = v2 + generic features (`src/adaptive.py`, `features3`, `ens3g`).
