@@ -20,7 +20,7 @@ from src.block import key_candidates, tfidf_candidates
 from src.config import OUTPUT_DIR, SEED, WORK_DIR
 from src.decode import ef_decode, exclusive
 from src.features import FEATURES, pair_features
-from src.features2 import NEW, competition_features, diff_features, s1_maxima
+from src.features2 import NEW, competition_features, diff_features, mask_keyonly, s1_maxima
 from src.partition import infer_state, learn_aliases, s1_state
 
 K_NAME, K_COMB, K_ADDR, K_KEEP = 10, 20, 10, 5
@@ -36,7 +36,7 @@ PRUNE = 0.01  # stage-2 input: pairs with p1 >= PRUNE
 # v1 = 34 pair features (E-M1); v2 = + 14 competition/difference features (E-F2: M1 0.9429 -> 0.9590)
 V1 = dict(feat="feat", m1=MODEL, m1_cols=FEATURES, ens="ens", tag="sub2", train=WORK_DIR / "e_m1_feats_k5" / "*.parquet")
 V2 = dict(feat="feat2", m1=WORK_DIR / "model_m1b.txt", m1_cols=FEATURES + NEW, ens="ens2", tag="sub3",
-          train=WORK_DIR / "e_f2_feats.parquet")
+          train=WORK_DIR / "e_f2b_feats.parquet")  # E-F2b: record-side features blanked on key-only pairs (0.9585)
 
 
 def _dir(split: str, name: str):
@@ -170,6 +170,8 @@ def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False) ->
     s2_dir = _dir(split, "stage2" + ("_v2" if v2 else ""))
     for path in sorted(_dir(split, cfg["feat"]).glob("*.parquet")):
         f = pl.read_parquet(path)
+        if v2:
+            f = mask_keyonly(f)
         f = f.with_columns(pl.Series("p", m1.predict(f.select(cfg["m1_cols"]).to_numpy())))
         if m2:  # stage 2 only needs pairs with p1 >= PRUNE (validated in E-M2b)
             f = f.filter(pl.col("p") >= PRUNE)

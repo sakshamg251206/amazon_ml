@@ -1,12 +1,12 @@
 # Project State
 
-**Last updated:** 26 Sep 2026, 17:35 IST
+**Last updated:** 26 Sep 2026, 18:35 IST
 **Branch:** `phase-2-experiments`
 **Baseline:** tag `v0_rule`
 
 ## Headline
 
-- Best validated result: **macro F0.5 = 0.9510** (E-E1: average of LightGBM + ExtraTrees + MLP stage-2 models, then expected-F decoding), up from **v0_rule = 0.5950**.
+- Best validated result: **macro F0.5 = 0.9614** (E-E2: stage-2 ensemble on top of E-F2b, `output/sub3d_ens_ef/`). Stage 1 alone: 0.9585 (E-F2b: M1 with 14 new competition/difference features, then expected-F decoding), up from 0.9510 (E-E1 ensemble on old features) and **v0_rule = 0.5950**. See `research/f05-gap/` and D17.
 - It is measured out-of-fold at real density: 414k train S1 in 19 whole states, with states held out 2-fold.
 - **This is a validation number, not a leaderboard score.** Expected leaderboard is about 0.93–0.94 (France unlabeled; test has more distractors).
 - The candidate ceiling is 0.990 (oracle F0.5 on our candidates), so the remaining gap is the matcher, not blocking.
@@ -17,7 +17,10 @@ Only `matching_results.tsv` is scored on the leaderboard. `candidate_pairs.tsv` 
 
 | Folder under `output/` | Candidates | Scoring | Validation F0.5 |
 |---|---|---|---|
-| **`sub2d_ens_ef/`** | Full (TF-IDF top-5 per state ∪ exact keys) | M1 → 3-model ensemble → expected-F | **0.9510** (final) |
+| **`sub3d_ens_ef/`** | Full | M1 v2 → stage-2 ensemble (58 features) → expected-F | **0.9614** |
+| `sub3b_m1_ef/` | Full | M1 v2 (48 features, key-only masked) → expected-F | 0.9585 |
+| `sub3b_m1_ef_unmasked/` | Full | M1 v2 unmasked → expected-F | 0.9590 (validation artifact on key-only pairs) |
+| `sub2d_ens_ef/` | Full (TF-IDF top-5 per state ∪ exact keys) | M1 → 3-model ensemble → expected-F | 0.9510 |
 | `sub2b_m1_ef/` | Full | M1 → expected-F | 0.9429 |
 | `quick_keys/sub2d_ens_ef/` | Exact keys only | Ensemble → expected-F | — (probe) |
 | `quick_keys/sub2c_m2_ef/` | Exact keys only | M2 → expected-F | — (probe) |
@@ -34,7 +37,13 @@ Test output sanity (ensemble file): 94.5–95.5% of S1 have a match in each coun
 .venv/bin/python -m src.pipeline --split test --stage features       # ~7 min
 .venv/bin/python -m src.pipeline --stage train                       # M1 -> work/model_m1.txt
 .venv/bin/python -m src.pipeline --split test --stage decide         # M1 file (sub2b_m1_ef)
-.venv/bin/python -m src.pipeline --split test --stage decide --ens   # final file (sub2d_ens_ef), ~30 min
+.venv/bin/python -m src.pipeline --split test --stage decide --ens   # v1 ensemble file (sub2d_ens_ef), ~30 min
+.venv/bin/python -m experiments.e_f2_comp && .venv/bin/python -m experiments.e_f2_comp mask   # E-F2 / E-F2b validation features
+.venv/bin/python -m src.pipeline --split test --stage features2      # add the 14 features to test buckets (~2 min)
+.venv/bin/python -m src.pipeline --stage train --v2                  # M1 v2 on e_f2b_feats -> work/model_m1b.txt
+.venv/bin/python -m src.pipeline --split test --stage decide --v2    # sub3b_m1_ef (validation 0.9585)
+.venv/bin/python -m experiments.e_e2_ensemble_v2                     # stage-2 v2 OOF + final models -> work/ens2/
+.venv/bin/python -m src.pipeline --split test --stage decide --v2 --ens   # sub3d_ens_ef (validation 0.9614)
 ```
 
 The ensemble's final models are `work/ens/final_{lgbm,extratrees,mlp}.joblib` with `final_weights.joblib` (equal). They are trained by `from experiments.e_e1_ensemble import final; final()` — run via import, not `-m`, so they unpickle under `experiments.e_e1_ensemble`. Validation data for them: `experiments/e_m1_lgbm.py` (features) → `experiments/e_e1_ensemble.py build`.
@@ -51,7 +60,10 @@ Validation sample: 19 whole states, 413,741 S1, out-of-fold (2 folds by state).
 | E-D1 | + expected-F decoding | 0.9429 | 0.979 | 0.892 |
 | E-M2 | + stage-2 collective/twin features | 0.9471 | 0.980 | 0.906 |
 | E-M2b | + pruning (p1 ≥ 0.01) + expected-F | 0.9488 | 0.981 | 0.904 |
-| **E-E1** | **3-model stage-2 ensemble + expected-F** | **0.9510** | — | — |
+| E-E1 | 3-model stage-2 ensemble + expected-F | 0.9510 | — | — |
+| E-F2 | M1 + 14 competition/difference features + expected-F | 0.9590 | 0.984 | 0.920 |
+| E-F2b | E-F2 with record-side features blanked on key-only pairs | 0.9585 | 0.984 | 0.920 |
+| **E-E2** | **E-F2b + stage-2 ensemble (LightGBM + ExtraTrees + MLP mean) + expected-F** | **0.9614** | — | — |
 
 ### E-E1: five models, tuned individually (stage 2, same 44 features)
 
