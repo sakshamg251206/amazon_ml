@@ -20,8 +20,8 @@ from src.features2 import NEW
 E.ENS = WORK_DIR / "ens2"
 E.DATA = E.ENS / "data.parquet"
 E.COLS = FEATURES + NEW + COLLECTIVE
-E.SRC_OOF = WORK_DIR / "e_f2_m1_oof.parquet"
-E.SRC_FEATS = WORK_DIR / "e_f2_feats.parquet"
+E.SRC_OOF = WORK_DIR / "e_f2b_m1_oof.parquet"  # masked (E-F2b), as shipped
+E.SRC_FEATS = WORK_DIR / "e_f2b_feats.parquet"
 E.FINAL = {"lgbm": "b", "extratrees": "a", "mlp": "b"}
 
 
@@ -32,6 +32,8 @@ def main() -> None:
     d = pl.read_parquet(E.DATA)
     X = d.select(E.COLS).to_numpy().astype(np.float32)
     nt = ntrue_table()
+    t0 = time.time()
+    log_experiment("E-E2:baseline_m1_masked", E.score(d["p1"].to_numpy(), d, nt), t0)  # same rows/folds
     P = []
     for name, cfg in E.FINAL.items():
         t0 = time.time()

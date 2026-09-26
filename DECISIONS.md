@@ -102,3 +102,33 @@ Each entry records the decision, the evidence behind it, and what it would cost 
 ## D16 — No transformers, translation or reinforcement learning
 
 - **Why:** no GPU and no torch on an 8 GB machine, with the deadline in about 1.5 days. Non-Latin pairs are 7% of true pairs, with worst-case upside of about +0.003. This is supervised pair classification with labels, so reinforcement learning does not apply.
+
+## D17 — Competition + difference features on the TF-IDF cosine (E-F2), with key-only masking (E-F2b)
+
+- **Decision:** add 14 features (`src/features2.py`):
+  - record-side margin / is-best / relative score on the combined and name cosine (`rev_*`);
+  - S1-side relative scores (`ctx_*`);
+  - name words added / missing;
+  - house-number delta / abs-delta / containment.
+- **Evidence:** M1 OOF 0.9429 → **0.9590**, with the same folds, parameters and decoding. `rev_margin_cos` takes 0.55 of gain. This matches SanthoshReddy's feature importance (`rev_margin` 0.66) and the research in `research/f05-gap/`.
+- **Masking:** record-side features are blanked on key-only pairs (no cosine).
+  - In validation, records outside the sampled states reach sample S1 only through keys, so every candidate of theirs has cosine 0 and looks "best". On test, those records also have TF-IDF candidates.
+  - Masked: 0.9585 (−0.0005). This is what ships, because it means the same thing on test.
+- **Checked:**
+  - The bucketed test computation equals the validation computation exactly (max diff 0.0 on 12.7M rows).
+  - On TF-IDF-retrieved pairs, test and validation distributions match ("is best" 0.202 everywhere; France looks like India).
+- **Cost if wrong:** the unmasked test file is kept as `output/sub3b_m1_ef_unmasked/`.
+
+## D18 — Stage-2 ensemble on the v2 features (E-E2)
+
+- **Evidence:** same rows (1.70M pairs with p1 ≥ 0.01) and same folds. Baseline masked M1: 0.9585 (fold 0 0.9544 / fold 1 0.9617). Stage-2 models:
+
+  | Model | F0.5 |
+  |---|---|
+  | LightGBM b | 0.9605 |
+  | ExtraTrees a | 0.9612 |
+  | MLP b | 0.9603 |
+  | **Mean of the three** | **0.9614** (0.9570 / 0.9649) |
+
+  The mean is up in both folds (+0.0026 / +0.0032).
+- **Decision:** ship `decide --v2 --ens` → `output/sub3d_ens_ef/`. Final models are in `work/ens2/`.
