@@ -28,7 +28,9 @@ from src.features2 import NEW, competition_features, diff_features, mask_keyonly
 from src.partition import infer_state
 
 K = 5
-QUERY_ROWS = 400  # rows per top-k chunk against a country-wide index
+QUERY_ROWS = 64  # rows per top-k chunk against a country-wide index
+NAME_DF_CAP = 2000  # absolute: 3-grams in more S1 than this are not used for retrieval (the first run,
+                    # with a 5% cap = 66k S1, blew memory up to ~27 GB and the Mac rebooted)
 NEW = WORK_DIR / "e_b5_new_pairs.parquet"
 FEATS = WORK_DIR / "e_b5_feats.parquet"
 FEAT_COLS = ["entity_id", "name_tok", "addr", "nums", "hn", "name_ns", "name_key", "nonlatin", "empty_addr"]
@@ -44,7 +46,7 @@ def nostate_candidates(s1: pl.DataFrame, recs: pl.DataFrame, alias: pl.DataFrame
             continue
         B.MAX_CHUNK_CELLS = QUERY_ROWS * g.height
         n1, nr = B._fit(g["name_tok"].to_list(), q["name_tok"].to_list(), analyzer="char_wb",
-                        ngram_range=(3, 3), min_df=1, max_df=B.MAX_DF, sublinear_tf=True)
+                        ngram_range=(3, 3), min_df=1, max_df=NAME_DF_CAP, sublinear_tf=True)
         pairs = B._topk(nr, n1, k, "x").select("r", "s")
         r, s = pairs["r"].to_numpy(), pairs["s"].to_numpy()
         # cosine features from full (unpruned) vectors, as in tfidf_candidates

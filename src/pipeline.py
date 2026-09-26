@@ -20,6 +20,7 @@ from src.block import key_candidates, tfidf_candidates
 from src.config import OUTPUT_DIR, SEED, WORK_DIR
 from src.decode import ef_decode, exclusive
 from src.features import FEATURES, pair_features
+from src.adaptive import GEN, generic_features, generic_tokens
 from src.features2 import NEW, competition_features, diff_features, mask_keyonly, s1_maxima
 from src.partition import infer_state, learn_aliases, s1_state
 
@@ -38,10 +39,12 @@ V1 = dict(feat="feat", m1=MODEL, m1_cols=FEATURES, ens="ens", tag="sub2", train=
 V2 = dict(feat="feat2", m1=WORK_DIR / "model_m1b.txt", m1_cols=FEATURES + NEW, ens="ens2", tag="sub3",
           train=WORK_DIR / "e_f2b_feats.parquet")  # E-F2b: record-side features blanked on key-only pairs (0.9585)
 # v3 = v2 + optional no-state name search (E-B5) + optional transliteration features (E-T1); set from results
-V3_NOSTATE, V3_TRANSLIT = True, True
+V3_NOSTATE, V3_TRANSLIT, V3_GENERIC = False, False, True  # E-B5 rejected (oracle +0.0008 only); E-T1 rejected (0.9577 < 0.9585); E-T2 kept (0.9594)
 TR = ["tr_name_tset", "tr_name_ratio", "tr_name_jw", "tr_n_tok_extra"]
-V3 = dict(feat="feat3", m1=WORK_DIR / "model_m1c.txt", m1_cols=FEATURES + NEW + (TR if V3_TRANSLIT else []), ens="ens3", tag="sub4",
-          train=WORK_DIR / (("e_b5" if V3_NOSTATE else "e_f2b") + ("_tr" if V3_TRANSLIT else "") + "_feats.parquet"))
+_V3_SRC = ("e_b5" if V3_NOSTATE else "e_f2b") + ("_tr" if V3_TRANSLIT else "") + ("_gen" if V3_GENERIC else "")
+V3 = dict(feat="feat3", m1=WORK_DIR / "model_m1c.txt",
+          m1_cols=FEATURES + NEW + (TR if V3_TRANSLIT else []) + (GEN if V3_GENERIC else []),
+          ens="ens3" if V3_NOSTATE else "ens3g", tag="sub4", train=WORK_DIR / f"{_V3_SRC}_feats.parquet")
 
 
 def _dir(split: str, name: str):
@@ -181,7 +184,8 @@ def features3(split: str) -> None:
             f = pl.concat([f.join(aff, on="rec", how="anti"), g.select(f.columns)], how="vertical_relaxed")
         f.write_parquet(path)
     best = s1_maxima(pl.scan_parquet(ext / "*.parquet")).collect(engine="streaming")
-    s1n = _norm(split, 1, ["entity_id", "name_tok", "hn"])
+    s1n = _norm(split, 1, ["entity_id", "country", "name_tok", "hn"])
+    gen = generic_tokens(s1n) if V3_GENERIC else None   # adaptive: this split's own S1 vocabulary, per country
     recs_h = pl.concat([pl.scan_parquet(WORK_DIR / f"norm/{split}_s{x}.parquet").select("entity_id", "name_tok", "hn", "nonlatin") for x in (2, 3)])
     if V3_TRANSLIT:
         mapping = json.loads((WORK_DIR / "translit_map_all.json").read_text())
@@ -199,6 +203,8 @@ def features3(split: str) -> None:
             recs_tr = rb.select("entity_id", "nonlatin").join(raw, on="entity_id", how="left")
             f = f.join(tr_features(f.select("s1", "rec", "name_tset", "name_ratio", "name_jw", "n_tok_extra"), s1n, recs_tr, mapping),
                        on=["s1", "rec"], how="left")
+        if V3_GENERIC:
+            f = f.join(generic_features(f.select("s1", "rec"), s1n, rb, gen), on=["s1", "rec"], how="left")
         mask_keyonly(f).write_parquet(path)
     print(f"features3 done in {time.time() - t0:.0f}s", flush=True)
 
