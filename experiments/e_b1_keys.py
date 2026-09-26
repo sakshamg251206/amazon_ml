@@ -7,29 +7,9 @@ import time
 
 import polars as pl
 
+from src.block import CAP, KEYS, with_keys
 from src.config import WORK_DIR
 from src.evalx import candidate_metrics, log_experiment, truth_pairs
-
-CAP = 20
-ADDR_STOP = ["door", "no", "unit", "flat", "plot", "suite", "apt", "block", "floor", "house",
-             "hno", "shop", "office", "room", "building", "bldg", "near", "opp"]
-
-
-def with_keys(df: pl.DataFrame) -> pl.DataFrame:
-    street = (pl.col("addr").str.extract_all(r"[a-z]{3,}")
-              .list.eval(pl.element().filter(~pl.element().is_in(ADDR_STOP))).list.first())
-    c = pl.col("country")
-    return df.with_columns(
-        pl.when(pl.col("hn") != "").then(pl.concat_str([c, pl.col("name_key"), pl.col("hn")], separator="|")).alias("k_v0"),
-        pl.when(pl.col("name_ns").str.len_chars() >= 4).then(pl.concat_str([c, pl.col("name_ns")], separator="|")).alias("k_ns"),
-        pl.when(pl.col("hn") != "").then(pl.concat_str([c, pl.col("hn"), street], separator="|")).alias("k_hn_street"),
-        pl.when(pl.col("hn") != "").then(pl.concat_str([c, pl.col("name_tok").str.split(" ").list.first(), pl.col("hn")], separator="|")).alias("k_name1_hn"),
-        pl.when(pl.col("name_key") != "").then(pl.concat_str([c, pl.col("name_key")], separator="|")).alias("k_namekey"),
-    )
-
-
-KEYS = ["k_v0", "k_ns", "k_hn_street", "k_name1_hn", "k_namekey"]
-
 
 def main() -> None:
     t0 = time.time()
