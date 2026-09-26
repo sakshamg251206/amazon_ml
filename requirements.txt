@@ -1,8 +1,11 @@
-anyascii==0.3.3
-iniconfig==2.3.0
-packaging==26.3
-pluggy==1.6.0
+# Python 3.12 (tested with 3.12.4). macOS: LightGBM also needs OpenMP -> `brew install libomp`
 polars==1.44.2
 polars-runtime-32==1.44.2
-pygments==2.21.0
+anyascii==0.3.3
+numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
+lightgbm==4.7.0
+rapidfuzz==3.14.6
+joblib==1.6.0
 pytest==9.1.1
