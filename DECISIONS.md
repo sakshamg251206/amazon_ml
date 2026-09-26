@@ -78,3 +78,27 @@ Each entry records the decision, the evidence behind it, and what it would cost 
 | GroupKFold by `source1_id` | Fold by partition |
 | Conservative t of 0.65–0.78 by rule | Swept on measured macro F0.5 |
 | MiniLM embeddings for blocking | Rejected (see D5) |
+
+## D12 — Replace `sparse_dot_topn` with chunked scipy top-k; prune ubiquitous features
+
+- **Decision:** top-k via scipy sparse matmul plus a per-row sort, in chunks bounded to 5M cells and run on a thread pool. Features in more than 5% of a large partition's S1 are dropped for *retrieval* only; cosine *features* always use the full vectors.
+- **Evidence:** `sparse_dot_topn` segfaulted (EXC_BAD_ACCESS) on France. E-B4 recall on 3 train states was unchanged (0.9307–0.9469 either way), runtime was 2× faster, and France's worst region ran in 17 min at 1.8 GB.
+- **Cost if wrong:** about 14% different candidate pairs than the ones the model was trained on, at the same recall.
+
+## D13 — Expected-F0.5 decoding instead of a single threshold
+
+- **Evidence:** E-D1: +0.0009 (M1), +0.0011 (M2). Threshold and per-country threshold variants were ≤ +0.0002.
+- **Why:** the metric is per-S1, and a singleton scores 1 only when nothing is predicted.
+
+## D14 — Stage 2 restricted to pairs with p1 ≥ 0.01
+
+- **Evidence:** E-M2b: 0.9488 vs 0.9482 unpruned. It keeps 15% of pairs, so the test set fits in 8 GB.
+
+## D15 — Final scorer = plain average of LightGBM + ExtraTrees + MLP
+
+- **Evidence:** E-E1 out-of-fold: best single model 0.9504 (ExtraTrees); 3-model mean 0.9510, higher in both folds. The mean beat fitted weights (0.9508) and a logistic-regression stacker (0.9507), so no weights are fitted and nothing overfits. Logistic regression and HistGB got about zero weight.
+- **Cost if wrong:** ≤ 0.002. The M1 file is kept as a fallback.
+
+## D16 — No transformers, translation or reinforcement learning
+
+- **Why:** no GPU and no torch on an 8 GB machine, with the deadline in about 1.5 days. Non-Latin pairs are 7% of true pairs, with worst-case upside of about +0.003. This is supervised pair classification with labels, so reinforcement learning does not apply.
