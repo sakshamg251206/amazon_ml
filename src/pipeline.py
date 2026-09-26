@@ -46,7 +46,7 @@ _V3_SRC = ("e_b5" if V3_NOSTATE else "e_f2b") + ("_tr" if V3_TRANSLIT else "") +
 V3 = dict(feat="feat3", m1=WORK_DIR / "model_m1c.txt",
           m1_cols=FEATURES + NEW + (TR if V3_TRANSLIT else []) + (GEN if V3_GENERIC else []),
           ens="ens3" if V3_NOSTATE else "ens3g", tag="sub4", train=WORK_DIR / f"{_V3_SRC}_feats.parquet")
-V3_CANON = False  # E-A1 canonical addresses: switches --v3 to feat4 / model_m1d / ens3gca / sub5 once validated
+V3_CANON = True  # E-A1 kept at stage 2 (ens3gca mean3 0.9639 vs 0.9623, both folds up); canonical addresses: switches --v3 to feat4 / model_m1d / ens3gca / sub5 once validated
 if V3_CANON:
     V3 = dict(V3, feat="feat4", m1=WORK_DIR / "model_m1d.txt", m1_cols=V3["m1_cols"] + CA, ens=V3["ens"] + "ca", tag="sub5",
               train=WORK_DIR / f"{_V3_SRC}_ca_feats.parquet")

@@ -184,3 +184,14 @@ Each entry records the decision, the evidence behind it, and what it would cost 
   - Monte Carlo per-S1 F0.5 vs sub3d (LB 0.952): sub4d +0.0037; **sub4d − US `111.` +0.0087** (US + India only).
 - **Decision:** `sub6_consensus` = sub4d minus `111.` pairs in US (61,315) and France (15,438). Matches ⊆ candidates (0 violations); validator PASS.
 - **Unmeasurable:** France is a bet backed by the house-number signature only.
+
+## D25 — Canonical addresses kept at stage 2; 7-model combination (E-C2) → `output/sub7_stack/`
+
+- **Stage 2 with CA (`ens3gca`):** mean3 **0.9639 vs 0.9623** (0.9593 / 0.9676 vs 0.9579 / 0.9658; both folds up). `V3_CANON = True`. Test outputs: `sub5d` (ensemble) and `sub5b` (M1).
+- **Plain vote stacker:** 7 voters, q per (country, vote pattern), cross-fitted. Scores **0.9630, below the best voter** (v5ens 0.9639) in both folds, so it was not used.
+- **Shipped rule (`sub7`):**
+  - Start from v5ens; remove pairs whose pattern is over-represented on test, where q × min(1, val rate ÷ test rate) < T (0.762). The validation rate uses an upper bound (n + 2√n + 3).
+  - On validation this is exactly v5ens; removals happen only on test.
+  - Removed: US 75.7k, India 35.2k, France 28.2k. Validator PASS against its own candidates.
+- **Label-free estimate vs sub3d (LB 0.952), a ranking not a score:** sub4d +0.0033, sub5d raw +0.0027, sub6 +0.0087, **sub7 +0.0100**.
+- **Disk:** the disk filled and processes were killed. Identical `candidate_pairs.tsv` copies in `output/` are now hard links.
