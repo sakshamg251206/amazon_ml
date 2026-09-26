@@ -24,6 +24,7 @@ from src.config import SEED, WORK_DIR
 from src.decode import ef_decode, exclusive
 from src.evalx import candidate_metrics, log_experiment, truth_pairs
 from src.features import FEATURES, pair_features
+from src.features2 import NEW, competition_features, diff_features, mask_keyonly
 from src.partition import infer_state
 
 K = 5
@@ -72,12 +73,13 @@ def retrieve() -> None:
 
 
 def build_feats() -> pl.DataFrame:
-    """Old E-M1 features, with every record that gained candidates re-featurised on its full candidate set."""
-    feats = pl.scan_parquet(WORK_DIR / "e_m1_feats_k5/*.parquet")
+    """E-F2b features over (old candidates ∪ no-state pairs): pair features recomputed for every record
+    that gained candidates, then competition/difference features recomputed on the full union
+    (S1-side maxima can change), then the key-only mask."""
+    base = pl.read_parquet(WORK_DIR / "e_f2b_feats.parquet", columns=["s1", "rec", "y", "country", "state", *FEATURES])
     new = pl.read_parquet(NEW)
     aff = new.select("rec").unique()
-    old_aff = feats.join(aff.lazy(), on="rec").select("s1", "rec", "cos_name", "cos_addr", "cos_comb",
-                                                      (pl.col("in_keys") > 0.5).alias("in_keys")).collect()
+    old_aff = base.join(aff, on="rec").select("s1", "rec", "cos_name", "cos_addr", "cos_comb", (pl.col("in_keys") > 0.5).alias("in_keys"))
     new = new.join(old_aff.select("s1", "rec"), on=["s1", "rec"], how="anti").with_columns(pl.lit(False).alias("in_keys"))
     cands = pl.concat([old_aff, new.select(old_aff.columns)], how="vertical_relaxed")
     s1 = pl.read_parquet(WORK_DIR / "norm/train_s1.parquet", columns=FEAT_COLS).join(cands.select(pl.col("s1").alias("entity_id")).unique(), on="entity_id")
@@ -86,11 +88,20 @@ def build_feats() -> pl.DataFrame:
     sample = pl.read_parquet(WORK_DIR / "e_b3_sample_s1.parquet").select(pl.col("entity_id").alias("s1"), "country", "state")
     t = truth_pairs().drop_nulls().with_columns(pl.lit(1, pl.Int8).alias("y"))
     f = f.join(t, on=["s1", "rec"], how="left").with_columns(pl.col("y").fill_null(0)).join(sample, on="s1")
-    rest = feats.join(aff.lazy(), on="rec", how="anti").collect()
-    return pl.concat([rest, f.select(rest.columns)], how="vertical_relaxed")
+    union = pl.concat([base.join(aff, on="rec", how="anti"), f.select(base.columns)], how="vertical_relaxed")
+    del base, f
+    comp = competition_features(union.select("s1", "rec", "cos_name", "cos_addr", "cos_comb"))
+    ids = union.select("s1", "rec")
+    cols = ["entity_id", "name_tok", "hn"]
+    s1t = pl.read_parquet(WORK_DIR / "norm/train_s1.parquet", columns=cols).join(ids.select(pl.col("s1").alias("entity_id")).unique(), on="entity_id")
+    rt = pl.concat([pl.read_parquet(WORK_DIR / f"norm/train_s{s}.parquet", columns=cols) for s in (2, 3)]) \
+           .join(ids.select(pl.col("rec").alias("entity_id")).unique(), on="entity_id")
+    diff = diff_features(ids, s1t, rt)
+    return mask_keyonly(union.join(comp, on=["s1", "rec"]).join(diff, on=["s1", "rec"]))
 
 
 def evaluate() -> None:
+    """M1 (FEATURES + NEW, masked) out-of-fold on the union; baseline E-F2b 0.9585 (same folds)."""
     t0 = time.time()
     feats = build_feats()
     feats.write_parquet(FEATS)
@@ -98,17 +109,18 @@ def evaluate() -> None:
     fold_of = {p: int(f) for p, f in zip(parts, np.random.default_rng(SEED).permutation(len(parts)) % 2)}  # E-M1 folds
     feats = feats.join(pl.DataFrame({"country": [p[0] for p in parts], "state": [p[1] for p in parts],
                                      "fold": [fold_of[p] for p in parts]}), on=["country", "state"])
+    cols = FEATURES + NEW
     oof = []
     for f in (0, 1):
         tr, va = feats.filter(pl.col("fold") != f), feats.filter(pl.col("fold") == f)
-        model = lgb.train({**PARAMS, "num_threads": 8}, lgb.Dataset(tr.select(FEATURES).to_numpy(), tr["y"].to_numpy()), ROUNDS)
-        oof.append(va.select("s1", "rec", "country", "y").with_columns(pl.Series("p", model.predict(va.select(FEATURES).to_numpy()))))
+        model = lgb.train({**PARAMS, "num_threads": 8}, lgb.Dataset(tr.select(cols).to_numpy(), tr["y"].to_numpy()), ROUNDS)
+        oof.append(va.select("s1", "rec", "country", "y").with_columns(pl.Series("p", model.predict(va.select(cols).to_numpy()))))
         del tr, va, model
     scored = pl.concat(oof)
     scored.write_parquet(WORK_DIR / "e_b5_m1_oof.parquet")
     nt = ntrue_table()
     m = f05(ef_decode(exclusive(scored.select(pl.col("s1").hash(), pl.col("rec").hash(), "y", "p"))), nt, by_country=True)
-    log_experiment("E-B5:m1+ef_with_nostate", {**m, "n_pairs": scored.height}, t0)
+    log_experiment("E-B5:m1v2_masked+nostate+ef", {**m, "n_pairs": scored.height}, t0)
 
 
 if __name__ == "__main__":

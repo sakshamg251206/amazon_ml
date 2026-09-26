@@ -17,12 +17,20 @@ from src.evalx import log_experiment
 from src.features import FEATURES
 from src.features2 import NEW
 
-E.ENS = WORK_DIR / "ens2"
-E.DATA = E.ENS / "data.parquet"
-E.COLS = FEATURES + NEW + COLLECTIVE
-E.SRC_OOF = WORK_DIR / "e_f2b_m1_oof.parquet"  # masked (E-F2b), as shipped
-E.SRC_FEATS = WORK_DIR / "e_f2b_feats.parquet"
-E.FINAL = {"lgbm": "b", "extratrees": "a", "mlp": "b"}
+TR = ["tr_name_tset", "tr_name_ratio", "tr_name_jw", "tr_n_tok_extra"]
+
+
+def configure(src: str = "e_f2b", ens: str = "ens2") -> None:
+    """src = validation feature/OOF prefix: e_f2b (v2), or e.g. e_b5_tr (v3: E-B5 + E-T1)."""
+    E.ENS = WORK_DIR / ens
+    E.DATA = E.ENS / "data.parquet"
+    E.COLS = FEATURES + NEW + (TR if "_tr" in src else []) + COLLECTIVE
+    E.SRC_OOF = WORK_DIR / f"{src}_m1_oof.parquet"
+    E.SRC_FEATS = WORK_DIR / f"{src}_feats.parquet"
+    E.FINAL = {"lgbm": "b", "extratrees": "a", "mlp": "b"}
+
+
+configure()
 
 
 def main() -> None:
@@ -33,19 +41,23 @@ def main() -> None:
     X = d.select(E.COLS).to_numpy().astype(np.float32)
     nt = ntrue_table()
     t0 = time.time()
-    log_experiment("E-E2:baseline_m1_masked", E.score(d["p1"].to_numpy(), d, nt), t0)  # same rows/folds
+    tag = E.ENS.name
+    log_experiment(f"E-E2[{tag}]:baseline_m1", E.score(d["p1"].to_numpy(), d, nt), t0)  # same rows/folds
     P = []
     for name, cfg in E.FINAL.items():
         t0 = time.time()
         p = E.oof(E.GRID[name][cfg], d, X)
         pl.DataFrame({"p": p}).write_parquet(E.ENS / f"oof_{name}.parquet")
-        log_experiment(f"E-E2:{name}:{cfg}", E.score(p, d, nt), t0)
+        log_experiment(f"E-E2[{tag}]:{name}:{cfg}", E.score(p, d, nt), t0)
         P.append(p)
     t0 = time.time()
-    log_experiment("E-E2:mean3", E.score(np.mean(P, axis=0), d, nt), t0)
+    log_experiment(f"E-E2[{tag}]:mean3", E.score(np.mean(P, axis=0), d, nt), t0)
     del X
     E.final()
 
 
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 2:
+        configure(sys.argv[1], sys.argv[2])
     main()

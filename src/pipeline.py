@@ -37,6 +37,11 @@ PRUNE = 0.01  # stage-2 input: pairs with p1 >= PRUNE
 V1 = dict(feat="feat", m1=MODEL, m1_cols=FEATURES, ens="ens", tag="sub2", train=WORK_DIR / "e_m1_feats_k5" / "*.parquet")
 V2 = dict(feat="feat2", m1=WORK_DIR / "model_m1b.txt", m1_cols=FEATURES + NEW, ens="ens2", tag="sub3",
           train=WORK_DIR / "e_f2b_feats.parquet")  # E-F2b: record-side features blanked on key-only pairs (0.9585)
+# v3 = v2 + optional no-state name search (E-B5) + optional transliteration features (E-T1); set from results
+V3_NOSTATE, V3_TRANSLIT = True, True
+TR = ["tr_name_tset", "tr_name_ratio", "tr_name_jw", "tr_n_tok_extra"]
+V3 = dict(feat="feat3", m1=WORK_DIR / "model_m1c.txt", m1_cols=FEATURES + NEW + (TR if V3_TRANSLIT else []), ens="ens3", tag="sub4",
+          train=WORK_DIR / (("e_b5" if V3_NOSTATE else "e_f2b") + ("_tr" if V3_TRANSLIT else "") + "_feats.parquet"))
 
 
 def _dir(split: str, name: str):
@@ -134,8 +139,72 @@ def features2(split: str) -> None:
     print(f"features2 done in {time.time() - t0:.0f}s", flush=True)
 
 
-def train(v2: bool = False) -> None:
-    cfg = V2 if v2 else V1
+def nostate(split: str) -> None:
+    """E-B5 on this split: name-only top-5 S1 in the whole country for records block() could not
+    place in a state (same per-country aliases as block())."""
+    from experiments.e_b5_nostate import nostate_candidates
+    t0 = time.time()
+    path = _dir(split, "nostate") / "pairs.parquet"
+    cols = ["entity_id", "country", "name_tok", "addr", "parts"]
+    out = []
+    for country in pl.read_parquet(WORK_DIR / f"norm/{split}_s1.parquet", columns=["country"])["country"].unique().sort():
+        s1 = _norm_country(split, 1, cols, country)
+        recs = pl.concat([_norm_country(split, x, cols, country) for x in (2, 3)])
+        out.append(nostate_candidates(s1.drop("parts"), recs, learn_aliases(s1, recs)))
+    pl.concat(out).write_parquet(path)
+    print(f"nostate done in {time.time() - t0:.0f}s -> {path}", flush=True)
+
+
+def features3(split: str) -> None:
+    """feat3 = v1 features (+ no-state pairs, affected records re-featurised) + E-F2 features
+    (+ transliteration features), key-only masked. v1/v2 buckets are left untouched."""
+    import json
+    from experiments.e_t1_translit import raw_names, tr_features
+    t0 = time.time()
+    src, ext, out = _dir(split, "feat"), _dir(split, "feat_ext"), _dir(split, "feat3")
+    s1_all = _norm(split, 1, FEAT_COLS)
+    recs_lazy = pl.concat([pl.scan_parquet(WORK_DIR / f"norm/{split}_s{x}.parquet").select(FEAT_COLS) for x in (2, 3)])
+    new = pl.read_parquet(_dir(split, "nostate") / "pairs.parquet") if V3_NOSTATE else None
+    for b in range(N_BUCKETS):                       # pass 1: candidate union + pair features
+        path = ext / f"b{b:02d}.parquet"
+        if path.exists():
+            continue
+        f = pl.read_parquet(src / f"b{b:02d}.parquet")
+        if new is not None:
+            nb = new.filter((pl.col("rec").hash(SEED) % N_BUCKETS) == b)
+            aff = nb.select("rec").unique()
+            old = f.join(aff, on="rec").select("s1", "rec", "cos_name", "cos_addr", "cos_comb", (pl.col("in_keys") > 0.5).alias("in_keys"))
+            nb = nb.join(old.select("s1", "rec"), on=["s1", "rec"], how="anti").with_columns(pl.lit(False).alias("in_keys"))
+            cands = pl.concat([old, nb.select(old.columns)], how="vertical_relaxed")
+            recs_b = recs_lazy.join(aff.lazy().rename({"rec": "entity_id"}), on="entity_id").collect()
+            g = pair_features(cands, s1_all, recs_b).select("s1", "rec", *[pl.col(x).cast(pl.Float32) for x in FEATURES])
+            f = pl.concat([f.join(aff, on="rec", how="anti"), g.select(f.columns)], how="vertical_relaxed")
+        f.write_parquet(path)
+    best = s1_maxima(pl.scan_parquet(ext / "*.parquet")).collect(engine="streaming")
+    s1n = _norm(split, 1, ["entity_id", "name_tok", "hn"])
+    recs_h = pl.concat([pl.scan_parquet(WORK_DIR / f"norm/{split}_s{x}.parquet").select("entity_id", "name_tok", "hn", "nonlatin") for x in (2, 3)])
+    if V3_TRANSLIT:
+        mapping = json.loads((WORK_DIR / "translit_map_all.json").read_text())
+        nl_ids = recs_h.filter(pl.col("nonlatin")).select("entity_id").collect()
+        raw = pl.concat([raw_names(split, x, nl_ids) for x in (2, 3)])
+    for b in range(N_BUCKETS):                       # pass 2: E-F2 (+ E-T1) features, mask
+        path = out / f"b{b:02d}.parquet"
+        if path.exists():
+            continue
+        f = pl.read_parquet(ext / f"b{b:02d}.parquet")
+        rb = recs_h.filter((pl.col("entity_id").hash(SEED) % N_BUCKETS) == b).collect()
+        f = f.join(competition_features(f.select("s1", "rec", "cos_name", "cos_addr", "cos_comb"), best), on=["s1", "rec"], how="left") \
+             .join(diff_features(f.select("s1", "rec"), s1n, rb), on=["s1", "rec"], how="left")
+        if V3_TRANSLIT:
+            recs_tr = rb.select("entity_id", "nonlatin").join(raw, on="entity_id", how="left")
+            f = f.join(tr_features(f.select("s1", "rec", "name_tset", "name_ratio", "name_jw", "n_tok_extra"), s1n, recs_tr, mapping),
+                       on=["s1", "rec"], how="left")
+        mask_keyonly(f).write_parquet(path)
+    print(f"features3 done in {time.time() - t0:.0f}s", flush=True)
+
+
+def train(v2: bool = False, v3: bool = False) -> None:
+    cfg = V3 if v3 else V2 if v2 else V1
     feats = pl.read_parquet(cfg["train"], columns=cfg["m1_cols"] + ["y"])
     model = lgb.train(PARAMS, lgb.Dataset(feats.select(cfg["m1_cols"]).to_numpy(), feats["y"].to_numpy()), ROUNDS)
     model.save_model(str(cfg["m1"]))
@@ -156,22 +225,23 @@ def _write(split: str, matches: pl.DataFrame, out_dir) -> None:
            .write_csv(out_dir / name, separator="\t", quote_style="never")
 
 
-def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False) -> None:
+def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False, v3: bool = False) -> None:
     """M1 (+ optional stage 2) -> exclusive assignment -> expected-F0.5 decoding (src/decode.py).
     Stage 2 = M2 LightGBM, or with ens=True the E-E1 average of LightGBM + ExtraTrees + MLP.
     Validation (out-of-fold): M1 0.9429, M2 0.9488, ensemble 0.9510."""
-    cfg = V2 if v2 else V1
+    cfg = V3 if v3 else V2 if v2 else V1
+    v2 = v2 or v3
     if v2 and m2 and not ens:
         raise ValueError("v2 has no single-M2 model; use --ens")
     m2 = m2 or ens
     t0 = time.time()
     m1 = lgb.Booster(model_file=str(cfg["m1"]))
     ex, pruned = [], []
-    s2_dir = _dir(split, "stage2" + ("_v2" if v2 else ""))
+    s2_dir = _dir(split, "stage2" + ("_v3" if v3 else "_v2" if v2 else ""))
     for path in sorted(_dir(split, cfg["feat"]).glob("*.parquet")):
         f = pl.read_parquet(path)
         if v2:
-            f = mask_keyonly(f)
+            f = mask_keyonly(f)   # idempotent (feat3 is already masked)
         f = f.with_columns(pl.Series("p", m1.predict(f.select(cfg["m1_cols"]).to_numpy())))
         if m2:  # stage 2 only needs pairs with p1 >= PRUNE (validated in E-M2b)
             f = f.filter(pl.col("p") >= PRUNE)
@@ -214,7 +284,8 @@ def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False) ->
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="test", choices=["train", "test"])
-    ap.add_argument("--stage", required=True, choices=["block", "features", "features2", "train", "decide", "all"])
+    ap.add_argument("--stage", required=True, choices=["block", "features", "features2", "nostate", "features3", "train", "decide", "all"])
+    ap.add_argument("--v3", action="store_true", help="use feat3 / model_m1c / ens3 (E-B5 + E-T1 per V3_* flags)")
     ap.add_argument("--v2", action="store_true", help="use the E-F2 feature set (feat2, model_m1b, ens2)")
     ap.add_argument("--m2", action="store_true", help="decide with the stage-2 (collective) model")
     ap.add_argument("--ens", action="store_true", help="decide with the stage-2 ensemble (E-E1)")
@@ -222,8 +293,9 @@ def main() -> None:
     stages = ["block", "features", "train", "decide"] if a.stage == "all" else [a.stage]
     for s in stages:
         {"block": lambda: block(a.split), "features": lambda: features(a.split),
-         "features2": lambda: features2(a.split), "train": lambda: train(a.v2),
-         "decide": lambda: decide(a.split, a.m2, a.ens, a.v2)}[s]()
+         "features2": lambda: features2(a.split), "nostate": lambda: nostate(a.split),
+         "features3": lambda: features3(a.split), "train": lambda: train(a.v2, a.v3),
+         "decide": lambda: decide(a.split, a.m2, a.ens, a.v2, a.v3)}[s]()
 
 
 if __name__ == "__main__":

@@ -8,3 +8,7 @@ id,title,type,credibility,recency,bias,url
 07,One-to-one ER matching VLDBJ 2023,academic,high,2023,low,https://dl.acm.org/doi/10.1007/s00778-023-00791-3
 08,Our OOF error profile,primary-data,high,2026-09,low,local
 09,vishwajit repo (404),primary,n/a,n/a,n/a,https://github.com/vishwajitsarnobat/amazon-ml-challenge-2026
+10,TarunSitaraman PR14 hard negatives,practitioner,medium,2026-09,low,https://github.com/TarunSitaraman/amazon-ml-challenge/pull/14
+11,Sparkly VLDB 2023,academic,high,2023,low,https://www.vldb.org/pvldb/vol16/p1507-paulsen.pdf
+12,Transliteration mining (parallel corpora),academic,medium,2010s,low,https://www.researchgate.net/publication/255968530
+13,Our error audit E-X1,primary-data,high,2026-09,low,local
