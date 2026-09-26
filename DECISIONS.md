@@ -153,3 +153,34 @@ Each entry records the decision, the evidence behind it, and what it would cost 
 - **Result:** M1 out-of-fold **0.9594 vs 0.9585** (fold 0 +0.0003, fold 1 +0.0013). India +0.0019; precision and recall both up.
 - **Generic lists are stable train → test:** India 238 / 237, US 470 / 471.
 - **Decision:** kept. v3 = v2 + generic features (`src/adaptive.py`, `features3`, `ens3g`).
+
+## D22 — Canonical addresses (E-A1): pending stage 2
+
+- **What:** `src/address.py`. State and department names/codes are mapped to one canonical form (e.g. Gironde → nouvelle aquitaine, kansas → ks). Street words go through country-aware abbreviation maps (FR r → rue, bd → boulevard; US st → street). Three features: `ca_tset`, `ca_sort`, `ca_jacc`.
+- **M1 result:** out-of-fold **0.9606 vs 0.9594** (fold 0 −0.0006, fold 1 +0.0023; US +0.0018). Fails the both-folds rule at stage 1.
+- **Next:** stage 2 (`ens3gca`) decides. Test path: `features4` + `V3_CANON` in `src/pipeline.py`, off until validated.
+
+## D23 — Decoy-weighted stage 2 (E-P1): marginal
+
+- **What:** stage-2 LightGBM trained with decoy records weighted ×w. It is scored as-is, and in a world where every decoy is duplicated to mimic test's 2× decoy density.
+- **Result:**
+  - w=2: as-is −0.0004; doubled decoys +0.0009.
+  - w=3: as-is −0.0008; doubled decoys +0.0010.
+- **Decision:** not shipped. Superseded by D24.
+
+## D24 — Density-checked model consensus (E-C1) → `output/sub6_consensus/`
+
+- **Evidence (public repo mayankgoplani431-del, which reports leaderboard scores):**
+  - E02 0.964; S3 0.956 despite higher validation.
+  - Keeping only pairs both models predict: **0.969**.
+  - Removed pairs were about 81% false: test decoys are near-copies with a shifted house number, at 2× train density.
+- **Our label-free audit:**
+  - Vote pattern per test pair over [v1 ens, v2 ens, v3 ens, v2 M1], compared with validation OOF on the same patterns.
+  - Cell `111.` (all stage-2 ensembles accept, stage-1 rejects), US: **0.092 per S1 on test vs 0.018 on validation (×5.2)**; house-number mismatch 0.90 vs 0.63.
+  - India: every cell ≈ ×1.0. France `111.`: 1.3–3.4× the US/India validation rates; 34% hn mismatch vs 1% in agreed France pairs.
+  - Cause: stage-2 collective features are raw counts of competing records (`claims_s1`, `p1_sum_rec`, `n_twins`), so they shift with decoy density.
+- **Estimate:**
+  - Per-cell test precision = validation precision × (validation rate ÷ test rate). US `111.` ≈ 0.17.
+  - Monte Carlo per-S1 F0.5 vs sub3d (LB 0.952): sub4d +0.0037; **sub4d − US `111.` +0.0087** (US + India only).
+- **Decision:** `sub6_consensus` = sub4d minus `111.` pairs in US (61,315) and France (15,438). Matches ⊆ candidates (0 violations); validator PASS.
+- **Unmeasurable:** France is a bet backed by the house-number signature only.

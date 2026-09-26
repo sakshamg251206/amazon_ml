@@ -21,6 +21,7 @@ from src.config import OUTPUT_DIR, SEED, WORK_DIR
 from src.decode import ef_decode, exclusive
 from src.features import FEATURES, pair_features
 from src.adaptive import GEN, generic_features, generic_tokens
+from src.address import CA, canon_addr, canon_features
 from src.features2 import NEW, competition_features, diff_features, mask_keyonly, s1_maxima
 from src.partition import infer_state, learn_aliases, s1_state
 
@@ -45,6 +46,10 @@ _V3_SRC = ("e_b5" if V3_NOSTATE else "e_f2b") + ("_tr" if V3_TRANSLIT else "") +
 V3 = dict(feat="feat3", m1=WORK_DIR / "model_m1c.txt",
           m1_cols=FEATURES + NEW + (TR if V3_TRANSLIT else []) + (GEN if V3_GENERIC else []),
           ens="ens3" if V3_NOSTATE else "ens3g", tag="sub4", train=WORK_DIR / f"{_V3_SRC}_feats.parquet")
+V3_CANON = False  # E-A1 canonical addresses: switches --v3 to feat4 / model_m1d / ens3gca / sub5 once validated
+if V3_CANON:
+    V3 = dict(V3, feat="feat4", m1=WORK_DIR / "model_m1d.txt", m1_cols=V3["m1_cols"] + CA, ens=V3["ens"] + "ca", tag="sub5",
+              train=WORK_DIR / f"{_V3_SRC}_ca_feats.parquet")
 
 
 def _dir(split: str, name: str):
@@ -209,6 +214,24 @@ def features3(split: str) -> None:
     print(f"features3 done in {time.time() - t0:.0f}s", flush=True)
 
 
+def features4(split: str) -> None:
+    """feat4 = feat3 + canonical-address similarity (E-A1). S1 canon once per country, records per bucket."""
+    t0 = time.time()
+    src, out = _dir(split, "feat3"), _dir(split, "feat4")
+    cols = ["entity_id", "country", "parts"]
+    c1 = pl.concat([canon_addr(_norm_country(split, 1, cols, c))
+                    for c in pl.read_parquet(WORK_DIR / f"norm/{split}_s1.parquet", columns=["country"])["country"].unique()])
+    recs = pl.concat([pl.scan_parquet(WORK_DIR / f"norm/{split}_s{x}.parquet").select(cols) for x in (2, 3)])
+    for b in range(N_BUCKETS):
+        path = out / f"b{b:02d}.parquet"
+        if path.exists():
+            continue
+        f = pl.read_parquet(src / f"b{b:02d}.parquet")
+        c2 = canon_addr(recs.filter((pl.col("entity_id").hash(SEED) % N_BUCKETS) == b).collect())
+        f.join(canon_features(f.select("s1", "rec"), c1, c2), on=["s1", "rec"], how="left").write_parquet(path)
+    print(f"features4 done in {time.time() - t0:.0f}s", flush=True)
+
+
 def train(v2: bool = False, v3: bool = False) -> None:
     cfg = V3 if v3 else V2 if v2 else V1
     feats = pl.read_parquet(cfg["train"], columns=cfg["m1_cols"] + ["y"])
@@ -290,7 +313,7 @@ def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False, v3
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="test", choices=["train", "test"])
-    ap.add_argument("--stage", required=True, choices=["block", "features", "features2", "nostate", "features3", "train", "decide", "all"])
+    ap.add_argument("--stage", required=True, choices=["block", "features", "features2", "nostate", "features3", "features4", "train", "decide", "all"])
     ap.add_argument("--v3", action="store_true", help="use feat3 / model_m1c / ens3 (E-B5 + E-T1 per V3_* flags)")
     ap.add_argument("--v2", action="store_true", help="use the E-F2 feature set (feat2, model_m1b, ens2)")
     ap.add_argument("--m2", action="store_true", help="decide with the stage-2 (collective) model")
@@ -300,7 +323,7 @@ def main() -> None:
     for s in stages:
         {"block": lambda: block(a.split), "features": lambda: features(a.split),
          "features2": lambda: features2(a.split), "nostate": lambda: nostate(a.split),
-         "features3": lambda: features3(a.split), "train": lambda: train(a.v2, a.v3),
+         "features3": lambda: features3(a.split), "features4": lambda: features4(a.split), "train": lambda: train(a.v2, a.v3),
          "decide": lambda: decide(a.split, a.m2, a.ens, a.v2, a.v3)}[s]()
 
 
