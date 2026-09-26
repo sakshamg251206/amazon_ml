@@ -16,7 +16,7 @@ from src.config import SEED, WORK_DIR
 from src.evalx import candidate_metrics, log_experiment, macro_f05_pairs, truth_pairs
 from src.features import FEATURES, pair_features
 
-K_TFIDF = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+K_TFIDF = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 5  # only when run directly
 PARAMS = dict(objective="binary", learning_rate=0.08, num_leaves=63, min_data_in_leaf=50,
               feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, seed=SEED, verbose=-1, num_threads=8)
 ROUNDS = 400
