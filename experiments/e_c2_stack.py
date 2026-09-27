@@ -33,12 +33,14 @@ VOTERS = [  # (name, validation source, test submission)
     ("v3ens", "ens:ens3g", "sub4d_ens_ef"),
     ("v5m1", "m1:e_f2b_gen_ca_m1_oof", "sub5b_m1_ef"),
     ("v5ens", "ens:ens3gca", "sub5d_ens_ef"),
+    ("v5nt", "ens:ens3gca_no_twins", "sub5notwinsd_ens_ef"),   # E-P2: stage 2 without twin features
 ]
+BASE = "v5nt"   # voter whose pairs are kept unless density-flagged
 K = len(VOTERS)
 A = 10.0                      # shrinkage pseudo-count towards the same-vote-count precision
 TS = np.round(np.arange(0.30, 0.91, 0.025), 3)
 CELLS = WORK_DIR / "e_c2_cells.parquet"
-OUT = OUTPUT_DIR / "sub7_stack"
+OUT = OUTPUT_DIR / "sub8_stack"   # sub7 = 7 voters, base v5ens
 
 
 def _val_decoded(src: str) -> pl.DataFrame:
@@ -151,10 +153,10 @@ def test() -> None:
                        pl.coalesce("q", "prior").fill_null(0.0).alias("q_val"))
     v = v.with_columns((pl.col("q_val") * pl.col("c")).alias("q"))
     v.write_parquet(WORK_DIR / "e_c2_test_pairs.parquet")
-    base = pl.col("pat").str.slice(K - 1, 1) == "1"                       # v5ens
+    base = pl.col("pat").str.slice([n for n, _, _ in VOTERS].index(BASE), 1) == "1"
     drop = base & (pl.col("c") < 1) & (pl.col("q") < T)                   # density-driven only
     keep = v.filter(base & ~drop).select("s1", "rec")
-    rep = v.filter(base).group_by("country").agg(pl.len().alias("v5ens"), drop.sum().alias("dropped"))
+    rep = v.filter(base).group_by("country").agg(pl.len().alias(BASE), drop.sum().alias("dropped"))
     print(f"T = {T:.3f}", rep.sort("country"), flush=True)
     # hashed -> string ids: every kept pair appears in at least one voter file
     strs = pl.concat([_test_pairs(sub).with_columns(pl.col("s1").hash().alias("hs"), pl.col("rec").hash().alias("hr"))

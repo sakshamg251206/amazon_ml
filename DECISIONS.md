@@ -195,3 +195,28 @@ Each entry records the decision, the evidence behind it, and what it would cost 
   - Removed: US 75.7k, India 35.2k, France 28.2k. Validator PASS against its own candidates.
 - **Label-free estimate vs sub3d (LB 0.952), a ranking not a score:** sub4d +0.0033, sub5d raw +0.0027, sub6 +0.0087, **sub7 +0.0100**.
 - **Disk:** the disk filled and processes were killed. Identical `candidate_pairs.tsv` copies in `output/` are now hard links.
+
+## D26 — Twin features collapse at test decoy density (E-P2) → stage 2 without twins
+
+- **World x2 (labelled):**
+  - Every decoy that is a candidate of a validation S1 is duplicated; twin components and all collective features are recomputed.
+  - Stage-2 LightGBM: **all 0.9628 → 0.8609**; no_counts 0.9630 → 0.8539; **no_twins 0.9606 → 0.9505**; no_s1_side 0.9591 → 0.9528.
+- **Why:** decoy businesses have their own copies. They agree as twins, and in training twin agreement meant a true match.
+- **Label-free test check (pairs per S1, test ÷ validation, US):**
+  - stage-1 models 1.015–1.018; stage-2 ensembles with twins 1.036–1.063;
+  - **no-twins ensemble 1.015**. India 1.011.
+- The no-twins ensemble (`ens3gca_no_twins`, mean3 0.9620) → `output/sub5notwinsd_ens_ef/`.
+
+## D27 — Vocabulary class of unmatched name tokens (E-T3): rejected
+
+- **Idea:** decoys swap in a *real* word ("daniels hawk" → "hanners hawk" at the same address); true copies add typos seen nowhere else. On same-address pairs the match rate is 0.82 without a real-word extra vs 0.22–0.37 with one.
+- **M1 result:** 0.9610 vs 0.9606 (fold 0 +0.0017, fold 1 −0.0003); gain share 0.1%. Existing name similarity already carries the signal.
+- **Decision:** off. Code: `src/vocab.py`, `features5`, `V3_VOCAB = False`.
+
+## D28 — Entity-group gains replace twins (E-G2)
+
+- **Group of (s1, r):** the S1's other candidates that are near-copies of r (name ≥ 85, address ≥ 80 or empty, same house number when both present).
+- **Features are gains, never counts:** best sibling minus self for name, address and p1. A duplicated decoy adds a gain of 0.
+- **Stage-2 LightGBM:** **0.9620** (0.9569 / 0.9659) vs no_twins 0.9606 (0.9559 / 0.9644), both folds up. x2 world **0.9534** vs 0.9505.
+- **Test:** 33.8% of pairs have a better sibling vs 35.5% on validation, so the features are density-stable.
+- **Decision:** kept, `V3_STAGE2 = "no_twins_grp"`. Code: `src/groups.py`, decide stage chunked by S1.
