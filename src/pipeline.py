@@ -24,6 +24,7 @@ from src.adaptive import GEN, generic_features, generic_tokens
 from src.address import CA, canon_addr, canon_features
 from src.vocab import VOC, token_df, vocab_features
 from src.groups import GRP, group_features
+from src.legal import LF, legal_features, legal_forms
 from src.features2 import NEW, competition_features, diff_features, mask_keyonly, s1_maxima
 from src.partition import infer_state, learn_aliases, s1_state
 
@@ -56,6 +57,10 @@ V3_VOCAB = False  # E-T3 vocabulary class of unmatched name tokens: feat5 / mode
 if V3_VOCAB:
     V3 = dict(V3, feat="feat5", m1=WORK_DIR / "model_m1e.txt", m1_cols=V3["m1_cols"] + VOC, ens=V3["ens"] + "v", tag="sub9",
               train=WORK_DIR / f"{_V3_SRC}_ca_voc_feats.parquet")
+V3_LEGAL = True  # E-T4 kept: M1 0.9655 vs 0.9606 (0.9604 / 0.9689, both folds; dummy-column control = 0.9606); legal-form agreement from raw names: feat6 (= feat4 + LF) / model_m1f / ens3gcal / sub10 once validated
+if V3_LEGAL:
+    V3 = dict(V3, feat="feat6", m1=WORK_DIR / "model_m1f.txt", m1_cols=V3["m1_cols"] + LF, ens=V3["ens"] + "l", tag="sub10",
+              train=WORK_DIR / f"{_V3_SRC}_ca_lf_feats.parquet")
 # E-P2: stage-2 feature set. Twin / S1-side count features collapse when decoys double (x2 world 0.86)
 V3_STAGE2 = "no_twins_grp"  # E-G2 kept (0.9620, x2 0.9534, both folds up). E-P2: as-is 0.9606, x2 0.9505 (all: 0.9628 / 0.8609); "all" | "no_twins" | "no_s1_side"  (ens dir gets the suffix; see experiments/e_p2_density.py)
 if V3_STAGE2 != "all":
@@ -260,6 +265,23 @@ def features5(split: str) -> None:
     print(f"features5 done in {time.time() - t0:.0f}s", flush=True)
 
 
+def features6(split: str) -> None:
+    """feat6 = feat4 + legal-form agreement (E-T4) from the raw names of this split."""
+    from src.config import DATA_DIR
+    t0 = time.time()
+    src, out = _dir(split, "feat4"), _dir(split, "feat6")
+    raw = lambda x: pl.read_csv(DATA_DIR / split / f"{split}_source{x}.tsv", separator="\t", quote_char=None, columns=["entity_id", "business_name"])
+    lf1 = legal_forms(raw(1))
+    lf2 = legal_forms(pl.concat([raw(2), raw(3)]))
+    for b in range(N_BUCKETS):
+        path = out / f"b{b:02d}.parquet"
+        if path.exists():
+            continue
+        f = pl.read_parquet(src / f"b{b:02d}.parquet")
+        f.join(legal_features(f.select("s1", "rec"), lf1, lf2), on=["s1", "rec"], how="left").write_parquet(path)
+    print(f"features6 done in {time.time() - t0:.0f}s", flush=True)
+
+
 def train(v2: bool = False, v3: bool = False) -> None:
     cfg = V3 if v3 else V2 if v2 else V1
     feats = pl.read_parquet(cfg["train"], columns=cfg["m1_cols"] + ["y"])
@@ -274,8 +296,13 @@ def _write(split: str, matches: pl.DataFrame, out_dir) -> None:
     ids = pl.read_parquet(WORK_DIR / f"norm/{split}_s1.parquet", columns=["entity_id"]) \
             .rename({"entity_id": "source1_entity_id"})
     out_dir.mkdir(parents=True, exist_ok=True)
+    shared = WORK_DIR / f"pipe_{split}" / "candidate_pairs.tsv"   # same blocking for every version: write once, hard-link
     for name, col, pairs in (("matching_results.tsv", "matched_entity_ids", matches.lazy()),
                              ("candidate_pairs.tsv", "candidate_entity_ids", cands)):
+        if name == "candidate_pairs.tsv" and shared.exists():
+            (out_dir / name).unlink(missing_ok=True)
+            (out_dir / name).hardlink_to(shared)
+            continue
         lists = pairs.group_by("s1").agg(pl.col("rec").unique().sort().str.join(",").alias(col)) \
                      .rename({"s1": "source1_entity_id"}).collect()
         ids.join(lists, on="source1_entity_id", how="left", maintain_order="left").fill_null("") \
@@ -349,7 +376,7 @@ def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False, v3
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="test", choices=["train", "test"])
-    ap.add_argument("--stage", required=True, choices=["block", "features", "features2", "nostate", "features3", "features4", "features5", "train", "decide", "all"])
+    ap.add_argument("--stage", required=True, choices=["block", "features", "features2", "nostate", "features3", "features4", "features5", "features6", "train", "decide", "all"])
     ap.add_argument("--v3", action="store_true", help="use feat3 / model_m1c / ens3 (E-B5 + E-T1 per V3_* flags)")
     ap.add_argument("--v2", action="store_true", help="use the E-F2 feature set (feat2, model_m1b, ens2)")
     ap.add_argument("--m2", action="store_true", help="decide with the stage-2 (collective) model")
@@ -359,7 +386,7 @@ def main() -> None:
     for s in stages:
         {"block": lambda: block(a.split), "features": lambda: features(a.split),
          "features2": lambda: features2(a.split), "nostate": lambda: nostate(a.split),
-         "features3": lambda: features3(a.split), "features4": lambda: features4(a.split), "features5": lambda: features5(a.split), "train": lambda: train(a.v2, a.v3),
+         "features3": lambda: features3(a.split), "features4": lambda: features4(a.split), "features5": lambda: features5(a.split), "features6": lambda: features6(a.split), "train": lambda: train(a.v2, a.v3),
          "decide": lambda: decide(a.split, a.m2, a.ens, a.v2, a.v3)}[s]()
 
 
