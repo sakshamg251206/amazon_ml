@@ -34,13 +34,14 @@ VOTERS = [  # (name, validation source, test submission)
     ("v5m1", "m1:e_f2b_gen_ca_m1_oof", "sub5b_m1_ef"),
     ("v5ens", "ens:ens3gca", "sub5d_ens_ef"),
     ("v5nt", "ens:ens3gca_no_twins", "sub5notwinsd_ens_ef"),   # E-P2: stage 2 without twin features
+    ("v5ntg", "ens:ens3gca_no_twins_grp", "sub5notwinsgrpd_ens_ef"),   # E-G2: + entity-group gains
 ]
-BASE = "v5nt"   # voter whose pairs are kept unless density-flagged
+BASE = "v5ntg"  # voter whose pairs are kept unless density-flagged
 K = len(VOTERS)
 A = 10.0                      # shrinkage pseudo-count towards the same-vote-count precision
 TS = np.round(np.arange(0.30, 0.91, 0.025), 3)
 CELLS = WORK_DIR / "e_c2_cells.parquet"
-OUT = OUTPUT_DIR / "sub8_stack"   # sub7 = 7 voters, base v5ens
+OUT = OUTPUT_DIR / "sub8_stack"   # sub7 = 7 voters, base v5ens; sub8 = 9 voters, base v5ntg
 
 
 def _val_decoded(src: str) -> pl.DataFrame:

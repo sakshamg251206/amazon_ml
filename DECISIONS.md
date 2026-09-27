@@ -220,3 +220,16 @@ Each entry records the decision, the evidence behind it, and what it would cost 
 - **Stage-2 LightGBM:** **0.9620** (0.9569 / 0.9659) vs no_twins 0.9606 (0.9559 / 0.9644), both folds up. x2 world **0.9534** vs 0.9505.
 - **Test:** 33.8% of pairs have a better sibling vs 35.5% on validation, so the features are density-stable.
 - **Decision:** kept, `V3_STAGE2 = "no_twins_grp"`. Code: `src/groups.py`, decide stage chunked by S1.
+
+## D29 — Legal-form agreement (E-T4): kept → FINAL `output/sub10notwinsgrpb_m1_ef/`
+
+- **Why:** half of the train S1 (1.11M of 2.2M) share their normalised name with another S1. They are different businesses that differ only in stripped tokens ("Crandall Enterprises P.C." vs "... Inc"). The legal form was invisible to every feature.
+- **Features:** `src/legal.py` on raw names: `lf_equal`, `lf_diff`, `lf_one_side`.
+- **M1 result:** **0.9655 vs 0.9606** (0.9604 / 0.9689; precision 0.9871, recall 0.9304).
+  - The dummy-column control reproduces the baseline exactly (0.9606).
+  - Gain share is tiny because the features break ties between rival S1 in exclusive assignment.
+- **Final file:** legal-form M1 alone (`model_m1f`, `feat6`). It is the best validated model and more density-robust than every stage-2 ensemble (US test/val pairs per S1 1.010, India 1.003).
+- **Checks:** validator PASS; 0 matches outside candidates.
+- **Not finished (disk-full crashes):**
+  - stage 2 on legal-form M1 (`ens3gcal_no_twins_grp`);
+  - E-T5 raw-name similarity (`src/rawname.py`, `experiments/e_t5_rawname.py`).
