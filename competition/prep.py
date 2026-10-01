@@ -7,9 +7,9 @@ from pathlib import Path
 
 import polars as pl
 
-from src.config import WORK_DIR
-from src.data import read_source
-from src.normalize import addr_parts, clean, is_nonlatin, name_tokens, nums
+from competition.config import WORK_DIR
+from competition.data import read_source
+from resolver.normalize import addr_parts, clean, is_nonlatin, name_tokens, nums
 
 CHUNK = 125_000
 SLICE = 1_000_000

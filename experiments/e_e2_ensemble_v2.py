@@ -12,11 +12,11 @@ import polars as pl
 import experiments.e_e1_ensemble as E
 from experiments.e_d1_decode import ntrue_table
 from experiments.e_m2_collective import COLLECTIVE
-from src.config import WORK_DIR
-from src.evalx import log_experiment
-from src.features import FEATURES
-from src.adaptive import GEN
-from src.features2 import NEW
+from competition.config import WORK_DIR
+from competition.evalx import log_experiment
+from resolver.features import FEATURES
+from resolver.adaptive import GEN
+from resolver.features2 import NEW
 
 TR = ["tr_name_tset", "tr_name_ratio", "tr_name_jw", "tr_n_tok_extra"]
 

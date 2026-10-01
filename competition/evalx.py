@@ -12,8 +12,8 @@ from datetime import datetime
 
 import polars as pl
 
-from src import config
-from src.data import read_ground_truth
+from competition import config
+from competition.data import read_ground_truth
 
 LOG = config.ROOT / "experiments" / "log.csv"
 

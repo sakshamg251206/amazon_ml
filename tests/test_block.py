@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from src.block import tfidf_candidates
+from resolver.block import tfidf_candidates
 
 S1 = pl.DataFrame({"name_tok": ["yazzie empire enterprises", "surgical care associates topeka", "blue program"],
                    "addr": ["24800 euclid avenue euclid oh", "3906 33rd terrace topeka ks", "261 jo mar road ardmore al"]})
@@ -42,7 +42,7 @@ def test_address_view_retrieves_renamed_business():
 
 
 def test_chunked_topk_equals_unchunked(monkeypatch):
-    import src.block as B
+    import resolver.block as B
     recs = pl.DataFrame({"name_tok": ["yazzie empier", "surgical caare topeka", "blue progrm", "blue"],
                          "addr": ["euclid oh", "topeka ks", "ardmore al", ""]})
     full = tfidf_candidates(S1, recs, k_name=2, k_comb=2).sort("r", "s")
@@ -54,7 +54,7 @@ def test_chunked_topk_equals_unchunked(monkeypatch):
 def test_topk_matches_bruteforce_dense_and_skips_zero_scores(monkeypatch):
     import numpy as np
     import scipy.sparse as sp
-    import src.block as B
+    import resolver.block as B
     q = sp.random(37, 50, density=0.1, format="csr", random_state=1, dtype=np.float32)
     idx = sp.random(23, 50, density=0.1, format="csr", random_state=2, dtype=np.float32)
     dense = (q @ idx.T).toarray()
@@ -81,7 +81,7 @@ def test_ubiquitous_features_are_pruned_only_in_large_partitions():
 
 
 def test_cosine_features_do_not_depend_on_pruning(monkeypatch):
-    import src.block as B
+    import resolver.block as B
     big = pl.DataFrame({"name_tok": [f"club w{i:05d}" for i in range(1500)], "addr": [f"{i} rue x" for i in range(1500)]})
     q = pl.DataFrame({"name_tok": ["club w00042", "club w00007"], "addr": ["42 rue x", "7 rue x"]})
     monkeypatch.setattr(B, "MAX_DF", 1.0)

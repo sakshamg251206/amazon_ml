@@ -1,6 +1,6 @@
 import polars as pl
 
-import src.partition as P
+import resolver.partition as P
 
 
 def _s1(rows):

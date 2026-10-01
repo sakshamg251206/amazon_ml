@@ -12,7 +12,7 @@ from collections import Counter, defaultdict
 import polars as pl
 from rapidfuzz import fuzz
 
-from src.normalize import LEGAL_FORMS, STOPWORDS, clean
+from resolver.normalize import LEGAL_FORMS, STOPWORDS, clean
 
 MIN_COUNT, MIN_SHARE = 3, 0.6
 

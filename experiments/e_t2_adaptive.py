@@ -12,12 +12,12 @@ import polars as pl
 
 from experiments.e_d1_decode import f05, ntrue_table
 from experiments.e_m1_lgbm import PARAMS, ROUNDS
-from src.adaptive import GEN, generic_features, generic_tokens
-from src.config import SEED, WORK_DIR
-from src.decode import ef_decode, exclusive
-from src.evalx import log_experiment
-from src.features import FEATURES
-from src.features2 import NEW
+from resolver.adaptive import GEN, generic_features, generic_tokens
+from competition.config import SEED, WORK_DIR
+from resolver.decode import ef_decode, exclusive
+from competition.evalx import log_experiment
+from resolver.features import FEATURES
+from resolver.features2 import NEW
 
 TR = ["tr_name_tset", "tr_name_ratio", "tr_name_jw", "tr_n_tok_extra"]
 

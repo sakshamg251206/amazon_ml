@@ -9,8 +9,8 @@ import time
 import polars as pl
 
 from experiments.e_m1_lgbm import decode
-from src.config import WORK_DIR
-from src.evalx import log_experiment, macro_f05_pairs, truth_pairs
+from competition.config import WORK_DIR
+from competition.evalx import log_experiment, macro_f05_pairs, truth_pairs
 
 SCORES = {
     "cos_comb": pl.col("cos_comb").fill_null(0.0),

@@ -10,10 +10,10 @@ import time
 
 import polars as pl
 
-from src.block import tfidf_candidates
-from src.config import WORK_DIR
-from src.evalx import candidate_metrics, log_experiment, peak_mem_mb, truth_pairs
-from src.partition import infer_state, learn_aliases, s1_state
+from resolver.block import tfidf_candidates
+from competition.config import WORK_DIR
+from competition.evalx import candidate_metrics, log_experiment, peak_mem_mb, truth_pairs
+from resolver.partition import infer_state, learn_aliases, s1_state
 
 COLS = ["entity_id", "country", "name_tok", "addr", "parts"]
 K_NAME, K_COMB, K_ADDR, K_KEEP = 10, 20, 10, 5
@@ -46,7 +46,7 @@ def train_sample() -> None:
         o = old.join(g.select(pl.col("entity_id").alias("s1")), on="s1")
         overlap = new.join(o, on=["s1", "rec"]).height / max(o.height, 1)
         ids = g["entity_id"]
-        log_experiment(f"E-B4:df{__import__('src.block').block.MAX_DF}:{country}/{state}", {
+        log_experiment(f"E-B4:df{__import__('resolver.block').block.MAX_DF}:{country}/{state}", {
             "n_s1": n, "n_rec": q.height, "pair_overlap_with_old": overlap,
             "recall_new": candidate_metrics(new, truth, ids)["cand_recall"],
             "recall_old": candidate_metrics(o, truth, ids)["cand_recall"]}, t0)
@@ -69,7 +69,7 @@ def france_crash_partition() -> None:
 
 
 if __name__ == "__main__":
-    import src.block as B
+    import resolver.block as B
     if len(sys.argv) > 2:
         B.MAX_DF = float(sys.argv[2])
     print(f"MAX_DF={B.MAX_DF}", flush=True)

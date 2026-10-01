@@ -7,7 +7,7 @@ Stages (each streams to WORK_DIR and skips work already on disk, so a crash cost
   train    : one LightGBM on all validation-sample features (work/e_m1_feats_k5) -> model file
   decide   : M1 (+ --m2 stage 2) -> exclusive + expected-F0.5 decoding -> TSVs in output/sub2*/
 
-Usage: python -m src.pipeline --split test --stage block|features|train|decide|all
+Usage: python -m competition.pipeline --split test --stage block|features|train|decide|all
 """
 import argparse
 import time
@@ -16,13 +16,13 @@ import lightgbm as lgb
 import numpy as np
 import polars as pl
 
-from src.block import key_candidates, tfidf_candidates
-from src.config import OUTPUT_DIR, SEED, WORK_DIR
-from src.decode import ef_decode, exclusive
-from src.features import FEATURES, pair_features
-from src.adaptive import GEN, generic_features, generic_tokens
-from src.features2 import NEW, competition_features, diff_features, mask_keyonly, s1_maxima
-from src.partition import infer_state, learn_aliases, s1_state
+from resolver.block import key_candidates, tfidf_candidates
+from competition.config import OUTPUT_DIR, SEED, WORK_DIR
+from resolver.decode import ef_decode, exclusive
+from resolver.features import FEATURES, pair_features
+from resolver.adaptive import GEN, generic_features, generic_tokens
+from resolver.features2 import NEW, competition_features, diff_features, mask_keyonly, s1_maxima
+from resolver.partition import infer_state, learn_aliases, s1_state
 
 K_NAME, K_COMB, K_ADDR, K_KEEP = 10, 20, 10, 5
 N_BUCKETS = 32
@@ -256,8 +256,8 @@ def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False, v3
         else:  # buckets hold whole records, so the per-record argmax is exact inside a bucket
             ex.append(exclusive(f.select("s1", "rec", "p")))
     if m2:
-        from experiments.e_g1_twins import components
-        from experiments.e_m2_collective import COLLECTIVE, collective
+        from resolver.collective import components
+        from resolver.collective import COLLECTIVE, collective
         recs = pl.concat([_norm(split, s, ["entity_id", "country", "name_key", "name_ns", "hn", "addr"]) for s in (2, 3)])
         comp = components(recs)
         del recs

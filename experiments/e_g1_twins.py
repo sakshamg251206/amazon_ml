@@ -14,36 +14,9 @@ import time
 
 import polars as pl
 
-from src.config import WORK_DIR
-from src.evalx import candidate_metrics, log_experiment, truth_pairs
-
-COLS = ["entity_id", "country", "name_key", "name_ns", "hn", "addr"]
-MAX_GROUP = 12  # key groups bigger than this are chains/generic names, not twins
-
-
-def twin_keys(df: pl.DataFrame) -> pl.DataFrame:
-    c = pl.col("country")
-    return df.select("entity_id", pl.concat_str([c, pl.lit("A"), pl.col("name_key"), pl.col("hn")], separator="|").alias("k1"),
-                     pl.concat_str([c, pl.lit("B"), pl.col("name_ns"), pl.col("addr")], separator="|").alias("k2")).with_columns(
-        pl.when(pl.col("k1").str.ends_with("|")).then(None).otherwise(pl.col("k1")).alias("k1"),
-        pl.when(pl.col("k2").str.ends_with("|")).then(None).otherwise(pl.col("k2")).alias("k2"))
-
-
-def components(recs: pl.DataFrame) -> pl.DataFrame:
-    """Connected components over key groups by min-label propagation. Returns (entity_id, comp)."""
-    k = twin_keys(recs)
-    edges = pl.concat([k.select("entity_id", pl.col(c).alias("key")).drop_nulls() for c in ("k1", "k2")])
-    edges = edges.filter(pl.len().over("key").is_between(2, MAX_GROUP))
-    lab = edges.select("entity_id").unique().with_columns(pl.col("entity_id").alias("comp"))
-    for it in range(30):
-        m = edges.join(lab, on="entity_id").group_by("key").agg(pl.col("comp").min().alias("kmin"))
-        new = edges.join(m, on="key").group_by("entity_id").agg(pl.col("kmin").min().alias("comp"))
-        changed = new.join(lab, on="entity_id").filter(pl.col("comp") != pl.col("comp_right")).height
-        lab = new
-        if changed == 0:
-            break
-    print(f"components converged after {it + 1} iterations", flush=True)
-    return lab
+from competition.config import WORK_DIR
+from resolver.collective import TWIN_COLS as COLS, components, twin_keys  # noqa: F401
+from competition.evalx import candidate_metrics, log_experiment, truth_pairs
 
 
 def main() -> None:

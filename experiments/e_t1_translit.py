@@ -17,12 +17,12 @@ from rapidfuzz.distance import JaroWinkler
 
 from experiments.e_d1_decode import f05, ntrue_table
 from experiments.e_m1_lgbm import PARAMS, ROUNDS
-from src.config import DATA_DIR, SEED, WORK_DIR
-from src.decode import ef_decode, exclusive
-from src.evalx import log_experiment, truth_pairs
-from src.features import FEATURES, _fuzz
-from src.features2 import NEW
-from src.translit import learn_map, translit_tokens
+from competition.config import DATA_DIR, SEED, WORK_DIR
+from resolver.decode import ef_decode, exclusive
+from competition.evalx import log_experiment, truth_pairs
+from resolver.features import FEATURES, _fuzz
+from resolver.features2 import NEW
+from competition.translit import learn_map, translit_tokens
 
 TR = ["tr_name_tset", "tr_name_ratio", "tr_name_jw", "tr_n_tok_extra"]
 

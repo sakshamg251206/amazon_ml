@@ -5,9 +5,9 @@ import time
 
 import polars as pl
 
-from src.config import WORK_DIR
-from src.evalx import log_experiment, truth_pairs
-from src.partition import infer_state, learn_aliases, s1_state
+from competition.config import WORK_DIR
+from competition.evalx import log_experiment, truth_pairs
+from resolver.partition import infer_state, learn_aliases, s1_state
 
 COLS = ["entity_id", "country", "parts"]
 

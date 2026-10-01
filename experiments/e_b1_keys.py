@@ -7,9 +7,9 @@ import time
 
 import polars as pl
 
-from src.block import CAP, KEYS, with_keys
-from src.config import WORK_DIR
-from src.evalx import candidate_metrics, log_experiment, truth_pairs
+from resolver.block import CAP, KEYS, with_keys
+from competition.config import WORK_DIR
+from competition.evalx import candidate_metrics, log_experiment, truth_pairs
 
 def main() -> None:
     t0 = time.time()

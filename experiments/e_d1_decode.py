@@ -5,7 +5,7 @@ Compares, on the 414k-S1 validation sample (M1 and M2 OOF probabilities):
   thr_ctry  : same, one t per country
   ef        : exclusive assignment, then per S1 keep the top-k records that maximise EXPECTED F0.5
               under the model's probabilities; predicting nothing scores P(no true match).
-Metric identical to src.evalx.macro_f05_pairs (checked against it for the current rule).
+Metric identical to competition.evalx.macro_f05_pairs (checked against it for the current rule).
 """
 import sys
 import time
@@ -13,8 +13,8 @@ import time
 import numpy as np
 import polars as pl
 
-from src.config import WORK_DIR
-from src.evalx import log_experiment
+from competition.config import WORK_DIR
+from competition.evalx import log_experiment
 
 NTRUE = WORK_DIR / "val_ntrue.parquet"
 
@@ -22,7 +22,7 @@ NTRUE = WORK_DIR / "val_ntrue.parquet"
 def ntrue_table() -> pl.DataFrame:
     """Per sample S1: number of true matches (0 = singleton). Cached (truth_pairs is large)."""
     if not NTRUE.exists():
-        from src.evalx import truth_pairs
+        from competition.evalx import truth_pairs
         ids = pl.read_parquet(WORK_DIR / "e_b3_sample_s1.parquet").select(pl.col("entity_id").alias("s1"), "country")
         t = truth_pairs().join(ids, on="s1")
         t.group_by("s1", "country").agg(pl.col("rec").is_not_null().sum().alias("n_true")) \

@@ -23,11 +23,11 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import KBinsDiscretizer, QuantileTransformer, StandardScaler
 
 from experiments.e_d1_decode import f05, ntrue_table
-from experiments.e_m2_collective import COLLECTIVE, collective
-from src.config import SEED, WORK_DIR
-from src.decode import ef_decode, exclusive
-from src.evalx import log_experiment
-from src.features import FEATURES
+from resolver.collective import COLLECTIVE, collective
+from competition.config import SEED, WORK_DIR
+from resolver.decode import ef_decode, exclusive
+from competition.evalx import log_experiment
+from resolver.features import FEATURES
 
 ENS = WORK_DIR / "ens"
 DATA = ENS / "data.parquet"
@@ -38,7 +38,7 @@ THREADS = 7  # test pipeline finished: use the machine
 
 
 def build() -> None:
-    from experiments.e_g1_twins import components
+    from resolver.collective import components
     ENS.mkdir(exist_ok=True)
     scored = pl.read_parquet(SRC_OOF).filter(pl.col("p") >= 0.01)
     recs = pl.concat([pl.read_parquet(WORK_DIR / f"norm/train_s{s}.parquet",

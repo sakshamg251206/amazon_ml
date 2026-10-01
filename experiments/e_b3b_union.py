@@ -7,9 +7,9 @@ import polars as pl
 
 from experiments.e_b1_keys import CAP, KEYS, with_keys
 from experiments.e_b3_tfidf import COLS, sample_partitions
-from src.config import WORK_DIR
-from src.evalx import candidate_metrics, log_experiment, truth_pairs
-from src.partition import s1_state
+from competition.config import WORK_DIR
+from competition.evalx import candidate_metrics, log_experiment, truth_pairs
+from resolver.partition import s1_state
 
 K = int(sys.argv[1]) if len(sys.argv) > 1 else 5
 

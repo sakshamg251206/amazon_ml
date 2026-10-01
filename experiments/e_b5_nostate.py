@@ -17,15 +17,15 @@ import lightgbm as lgb
 import numpy as np
 import polars as pl
 
-import src.block as B
+import resolver.block as B
 from experiments.e_d1_decode import f05, ntrue_table
 from experiments.e_m1_lgbm import PARAMS, ROUNDS
-from src.config import SEED, WORK_DIR
-from src.decode import ef_decode, exclusive
-from src.evalx import candidate_metrics, log_experiment, truth_pairs
-from src.features import FEATURES, pair_features
-from src.features2 import NEW, competition_features, diff_features, mask_keyonly
-from src.partition import infer_state
+from competition.config import SEED, WORK_DIR
+from resolver.decode import ef_decode, exclusive
+from competition.evalx import candidate_metrics, log_experiment, truth_pairs
+from resolver.features import FEATURES, pair_features
+from resolver.features2 import NEW, competition_features, diff_features, mask_keyonly
+from resolver.partition import infer_state
 
 K = 5
 QUERY_ROWS = 64  # rows per top-k chunk against a country-wide index
