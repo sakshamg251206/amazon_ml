@@ -213,7 +213,7 @@ class Matcher:
                     path, compress=3)
 
     @classmethod
-    def load(cls, path: str | Path) -> "Matcher":
+    def load(cls, path: str | Path) -> Matcher:
         d = joblib.load(path)
         return cls(stage1=lgb.Booster(model_str=d["stage1"]), stage2=d["stage2"], meta=d["meta"])
 

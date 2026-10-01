@@ -1,4 +1,5 @@
 import polars as pl
+
 from resolver.baseline import add_keys, rule_matches
 
 COLS = ["entity_id", "business_name", "business_address", "country"]

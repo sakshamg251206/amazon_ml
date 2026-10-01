@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from resolver.synth import vocab as V
-from resolver.synth.translit import to_devanagari, phonetic_romanise
+from resolver.synth.translit import phonetic_romanise, to_devanagari
 
 COUNTRY_NAMES = {"US": "US", "IN": "India", "FR": "France"}
 
@@ -257,9 +257,13 @@ class Noise:
         if e.country == "France" and self.p(0.5):
             name = _strip_accents(name)
         if self.p(0.02):                                          # domain form
-            return re.sub(r"[^a-z0-9]", "", "".join(e.name_core).lower()) + r.choice([".com", ".net", ".in" if e.country == "India" else ".fr" if e.country == "France" else ".us"])
-        if self.p(0.02):                                          # DBA form
-            name = f"{r.choice(V.US_SURNAMES)} Holdings DBA {name}" if e.country == "US" else f"{name} ({r.choice(V.IN_SURNAMES if e.country == 'India' else V.FR_SURNAMES)})"
+            tld = {"India": ".in", "France": ".fr"}.get(e.country, r.choice([".com", ".net", ".us"]))
+            return re.sub(r"[^a-z0-9]", "", "".join(e.name_core).lower()) + tld
+        if self.p(0.02):                                          # DBA / trade-name form
+            if e.country == "US":
+                name = f"{r.choice(V.US_SURNAMES)} Holdings DBA {name}"
+            else:
+                name = f"{name} ({r.choice(V.IN_SURNAMES if e.country == 'India' else V.FR_SURNAMES)})"
         return _case(name, r, 0.2 * self.k, 0.08 * self.k)
 
     # ---------------------------------------------------------------- addresses
@@ -390,7 +394,7 @@ class SynthConfig:
     noise_s2: float = 0.85
     noise_s3: float = 1.25
 
-    def scaled(self, scale: float) -> "SynthConfig":
+    def scaled(self, scale: float) -> SynthConfig:
         return SynthConfig(**{**self.__dict__, "train": {k: max(50, int(v * scale)) for k, v in self.train.items()},
                               "test": {k: max(50, int(v * scale)) for k, v in self.test.items()}})
 

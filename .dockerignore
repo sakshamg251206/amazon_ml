@@ -1,0 +1,11 @@
+.git
+.venv
+artifacts
+data
+output
+work
+node_modules
+**/__pycache__
+.pytest_cache
+.ruff_cache
+student_resource/dataset

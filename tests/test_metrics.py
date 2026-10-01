@@ -1,4 +1,5 @@
 import pytest
+
 from competition import config
 from resolver.metrics import entity_f05, macro_f05
 

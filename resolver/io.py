@@ -53,14 +53,14 @@ class Dataset:
 
     @classmethod
     def from_frames(cls, s1: pl.DataFrame, s2: pl.DataFrame, s3: pl.DataFrame,
-                    truth: pl.DataFrame | None = None, name: str = "dataset") -> "Dataset":
+                    truth: pl.DataFrame | None = None, name: str = "dataset") -> Dataset:
         s1, s2, s3 = _check_source(s1, 1), _check_source(s2, 2), _check_source(s3, 3)
         recs = pl.concat([s2.with_columns(pl.lit(2, pl.Int8).alias("source")),
                           s3.with_columns(pl.lit(3, pl.Int8).alias("source"))])
         return cls(s1=s1, recs=recs, truth=truth_frame(truth) if truth is not None else None, name=name)
 
     @classmethod
-    def load(cls, path: str | Path) -> "Dataset":
+    def load(cls, path: str | Path) -> Dataset:
         path = Path(path)
         files = sorted(path.glob("*_source1.tsv"))
         if len(files) != 1:

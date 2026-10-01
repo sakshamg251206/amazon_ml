@@ -153,3 +153,18 @@ Each entry records the decision, the evidence behind it, and what it would cost 
 - **Result:** M1 out-of-fold **0.9594 vs 0.9585** (fold 0 +0.0003, fold 1 +0.0013). India +0.0019; precision and recall both up.
 - **Generic lists are stable train → test:** India 238 / 237, US 470 / 471.
 - **Decision:** kept. v3 = v2 + generic features (`src/adaptive.py`, `features3`, `ens3g`).
+
+## D22 — Productise: one in-memory engine, synthetic data, web app (v2.0)
+
+- **Decision:** the validated design (D4–D18, E-T2) becomes the `resolver` package: one in-memory flow `prepare → score → decode`, used by the CLI, the API, the web app and single-record matching. The 8 GB disk-streaming drivers stay in `competition/` for the full real data.
+- **Kept exactly:** partitions, blocking depths (10/20/10, keep 5), the 54 stage-1 features, the 10 collective features, the three stage-2 members and their configs, pruning at p1 ≥ 0.01, and expected-F decoding.
+- **Changed:**
+  - **No key-only masking (D17).** Masking existed because validation reached records outside the sampled states only through keys. The engine trains on whole splits, so train and test see the same candidate structure.
+  - **Deterministic row order** before every ordinal rank and tie-break. Two runs on identical data used to differ by one match.
+  - **Stage-2 LightGBM** uses 300 rounds below 200k rows.
+- **Synthetic data:** `resolver/synth` reproduces the measured structure (5.6% singletons, ~3.2 copies per reference) and the error-audit patterns: generic-word neighbour fakes, shifted house numbers, non-Latin script, missing states, chains and co-located businesses. France appears only in test.
+- **Results (synthetic):**
+  - out-of-fold F0.5 0.981 (rule 0.758, fuzzy 0.903);
+  - held-out test 0.983, with France zero-shot at 0.979;
+  - online matching agrees with batch resolution on 98% of 300 held-out records.
+- **Cost if wrong:** the synthetic data is easier than the real data, and stage 2 adds only +0.0002 on it. Real-data claims stay the D18 numbers.

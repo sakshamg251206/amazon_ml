@@ -90,7 +90,7 @@ if __name__ == "__main__":
     c = competition_features(p).sort("s1", "rec")
     assert c.filter((pl.col("s1") == "A") & (pl.col("rec") == "r1"))["rev_is_best_cos"].item() == 1.0
     assert abs(c.filter((pl.col("s1") == "A") & (pl.col("rec") == "r1"))["rev_margin_cos"].item() - 0.30) < 1e-6
-    assert abs(c.filter((pl.col("s1") == "B"))["rev_margin_cos"].item() + 0.30) < 1e-6        # r1 prefers A
+    assert abs(c.filter(pl.col("s1") == "B")["rev_margin_cos"].item() + 0.30) < 1e-6        # r1 prefers A
     assert c.filter((pl.col("s1") == "A") & (pl.col("rec") == "r2"))["ctx_is_best_cos"].item() == 0.0
     s1 = pl.DataFrame({"entity_id": ["A"], "name_tok": ["yazzie empire"], "hn": ["338"]})
     rc = pl.DataFrame({"entity_id": ["r1", "r2"], "name_tok": ["yazzie empire holdings", "yazzie empire"], "hn": ["352", "33"]})

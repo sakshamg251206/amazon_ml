@@ -1,6 +1,7 @@
 import pytest
+
 from competition import config
-from competition.data import read_source, read_ground_truth
+from competition.data import read_ground_truth, read_source
 
 needs_data = pytest.mark.skipif(
     not (config.DATA_DIR / "train" / "train_source1.tsv").exists(), reason="dataset not present"

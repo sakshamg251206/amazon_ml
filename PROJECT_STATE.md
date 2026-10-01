@@ -1,5 +1,7 @@
 # Project State
 
+> **v2.0 (Oct 2026):** the pipeline is now the `resolver` package with a web app, API, synthetic data and Docker deploy. See README.md and DECISIONS.md D22. The competition-era state below is unchanged; its commands now live under `competition/`.
+
 **Last updated:** 26 Sep 2026, 18:35 IST
 **Branch:** `phase-2-experiments`
 **Baseline:** tag `v0_rule`
@@ -32,18 +34,18 @@ Test output sanity (ensemble file): 94.5–95.5% of S1 have a match in each coun
 ## Reproduce the final file
 
 ```
-.venv/bin/python -m src.prep                                         # normalise raw TSVs -> work/norm/ (9 min)
-.venv/bin/python -m src.pipeline --split test --stage block          # ~4.5 h on the 8 GB M2 Mac
-.venv/bin/python -m src.pipeline --split test --stage features       # ~7 min
-.venv/bin/python -m src.pipeline --stage train                       # M1 -> work/model_m1.txt
-.venv/bin/python -m src.pipeline --split test --stage decide         # M1 file (sub2b_m1_ef)
-.venv/bin/python -m src.pipeline --split test --stage decide --ens   # v1 ensemble file (sub2d_ens_ef), ~30 min
+.venv/bin/python -m competition.prep                                         # normalise raw TSVs -> work/norm/ (9 min)
+.venv/bin/python -m competition.pipeline --split test --stage block          # ~4.5 h on the 8 GB M2 Mac
+.venv/bin/python -m competition.pipeline --split test --stage features       # ~7 min
+.venv/bin/python -m competition.pipeline --stage train                       # M1 -> work/model_m1.txt
+.venv/bin/python -m competition.pipeline --split test --stage decide         # M1 file (sub2b_m1_ef)
+.venv/bin/python -m competition.pipeline --split test --stage decide --ens   # v1 ensemble file (sub2d_ens_ef), ~30 min
 .venv/bin/python -m experiments.e_f2_comp && .venv/bin/python -m experiments.e_f2_comp mask   # E-F2 / E-F2b validation features
-.venv/bin/python -m src.pipeline --split test --stage features2      # add the 14 features to test buckets (~2 min)
-.venv/bin/python -m src.pipeline --stage train --v2                  # M1 v2 on e_f2b_feats -> work/model_m1b.txt
-.venv/bin/python -m src.pipeline --split test --stage decide --v2    # sub3b_m1_ef (validation 0.9585)
+.venv/bin/python -m competition.pipeline --split test --stage features2      # add the 14 features to test buckets (~2 min)
+.venv/bin/python -m competition.pipeline --stage train --v2                  # M1 v2 on e_f2b_feats -> work/model_m1b.txt
+.venv/bin/python -m competition.pipeline --split test --stage decide --v2    # sub3b_m1_ef (validation 0.9585)
 .venv/bin/python -m experiments.e_e2_ensemble_v2                     # stage-2 v2 OOF + final models -> work/ens2/
-.venv/bin/python -m src.pipeline --split test --stage decide --v2 --ens   # sub3d_ens_ef (validation 0.9614)
+.venv/bin/python -m competition.pipeline --split test --stage decide --v2 --ens   # sub3d_ens_ef (validation 0.9614)
 ```
 
 The ensemble's final models are `work/ens/final_{lgbm,extratrees,mlp}.joblib` with `final_weights.joblib` (equal). They are trained by `from experiments.e_e1_ensemble import final; final()` — run via import, not `-m`, so they unpickle under `experiments.e_e1_ensemble`. Validation data for them: `experiments/e_m1_lgbm.py` (features) → `experiments/e_e1_ensemble.py build`.

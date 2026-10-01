@@ -52,7 +52,7 @@ class ResolverIndex:
         self.metrics = summary(self.matches, ds.truth, ds.s1["entity_id"]) if ds.truth is not None else None
 
     @classmethod
-    def build(cls, ds, matcher: E.Matcher, workers: int = 1) -> "ResolverIndex":
+    def build(cls, ds, matcher: E.Matcher, workers: int = 1) -> ResolverIndex:
         return cls(ds, matcher, E.resolve(ds, matcher, keep_index=True, workers=workers))
 
     # ------------------------------------------------------------------ browsing

@@ -19,8 +19,7 @@ import polars as pl
 
 from resolver import engine as E
 from resolver.baseline import rule_pairs
-from resolver.evaluate import (best_threshold, candidate_metrics, decode_ef, decode_threshold, summary,
-                               threshold_curve)
+from resolver.evaluate import best_threshold, candidate_metrics, decode_ef, decode_threshold, summary, threshold_curve
 from resolver.explain import FEATURE_INFO
 
 log = logging.getLogger("resolver")

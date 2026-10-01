@@ -54,6 +54,7 @@ def test_chunked_topk_equals_unchunked(monkeypatch):
 def test_topk_matches_bruteforce_dense_and_skips_zero_scores(monkeypatch):
     import numpy as np
     import scipy.sparse as sp
+
     import resolver.block as B
     q = sp.random(37, 50, density=0.1, format="csr", random_state=1, dtype=np.float32)
     idx = sp.random(23, 50, density=0.1, format="csr", random_state=2, dtype=np.float32)
