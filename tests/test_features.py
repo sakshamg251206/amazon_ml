@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from src.features import FEATURES, pair_features
+from resolver.features import FEATURES, pair_features
 
 
 def _recs(rows):

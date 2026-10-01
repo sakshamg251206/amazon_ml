@@ -9,10 +9,10 @@ import numpy as np
 import polars as pl
 
 from experiments.e_d1_decode import f05, ntrue_table
-from src.config import WORK_DIR
-from src.decode import ef_decode, exclusive
-from src.evalx import truth_pairs
-from src.partition import infer_state
+from competition.config import WORK_DIR
+from resolver.decode import ef_decode, exclusive
+from competition.evalx import truth_pairs
+from resolver.partition import infer_state
 
 ENS2 = WORK_DIR / "ens2"
 

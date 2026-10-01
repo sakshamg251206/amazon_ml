@@ -12,9 +12,9 @@ import lightgbm as lgb
 import numpy as np
 import polars as pl
 
-from src.config import SEED, WORK_DIR
-from src.evalx import candidate_metrics, log_experiment, macro_f05_pairs, truth_pairs
-from src.features import FEATURES, pair_features
+from competition.config import SEED, WORK_DIR
+from competition.evalx import candidate_metrics, log_experiment, macro_f05_pairs, truth_pairs
+from resolver.features import FEATURES, pair_features
 
 K_TFIDF = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 5  # only when run directly
 PARAMS = dict(objective="binary", learning_rate=0.08, num_leaves=63, min_data_in_leaf=50,

@@ -1,4 +1,4 @@
-from src.decide import write_id_lists
+from competition.decide import write_id_lists
 
 
 def test_writer_emits_every_s1_once(tmp_path):

@@ -1,8 +1,8 @@
 import polars as pl
 import pytest
 
-from src.evalx import candidate_metrics, macro_f05_pairs
-from src.metrics import macro_f05
+from competition.evalx import candidate_metrics, macro_f05_pairs
+from resolver.metrics import macro_f05
 
 TRUTH = pl.DataFrame({"s1": ["a", "b", "b", "c"], "rec": [None, "x", "y", "z"]})
 IDS = pl.Series(["a", "b", "c"])

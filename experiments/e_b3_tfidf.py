@@ -11,10 +11,10 @@ import time
 import polars as pl
 
 from experiments.e_b1_keys import CAP, KEYS, with_keys
-from src.block import tfidf_candidates
-from src.config import SEED, WORK_DIR
-from src.evalx import candidate_metrics, log_experiment, truth_pairs
-from src.partition import infer_state, s1_state
+from resolver.block import tfidf_candidates
+from competition.config import SEED, WORK_DIR
+from competition.evalx import candidate_metrics, log_experiment, truth_pairs
+from resolver.partition import infer_state, s1_state
 
 COLS = ["entity_id", "country", "name_tok", "addr", "parts", "hn", "name_key", "name_ns"]
 FRAC = 0.15

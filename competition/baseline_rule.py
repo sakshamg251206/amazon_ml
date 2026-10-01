@@ -2,7 +2,7 @@
 and that key is unique in S1. High precision, modest recall; no learning."""
 import polars as pl
 
-from src.normalize import house_no, name_key
+from resolver.normalize import house_no, name_key
 
 
 def add_keys(df: pl.DataFrame) -> pl.DataFrame:

@@ -12,11 +12,11 @@ import polars as pl
 
 from experiments.e_d1_decode import f05, ntrue_table
 from experiments.e_m1_lgbm import PARAMS, ROUNDS
-from src.config import SEED, WORK_DIR
-from src.decode import ef_decode, exclusive
-from src.evalx import log_experiment
-from src.features import FEATURES
-from src.features2 import NEW, competition_features, diff_features, mask_keyonly
+from competition.config import SEED, WORK_DIR
+from resolver.decode import ef_decode, exclusive
+from competition.evalx import log_experiment
+from resolver.features import FEATURES
+from resolver.features2 import NEW, competition_features, diff_features, mask_keyonly
 
 FEATS = WORK_DIR / "e_f2_feats.parquet"
 

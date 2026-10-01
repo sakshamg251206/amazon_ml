@@ -1,6 +1,6 @@
 import pytest
-from src import config
-from src.metrics import entity_f05, macro_f05
+from competition import config
+from resolver.metrics import entity_f05, macro_f05
 
 
 def test_pdf_worked_example():
@@ -26,5 +26,5 @@ def test_macro_averages_over_truth_and_treats_missing_as_empty():
 
 @pytest.mark.skipif(not (config.DATA_DIR / "train").exists(), reason="dataset not present")
 def test_all_empty_on_train_equals_singleton_rate():
-    from src.data import read_ground_truth
+    from competition.data import read_ground_truth
     assert macro_f05({}, read_ground_truth()) == pytest.approx(0.0558, abs=5e-4)

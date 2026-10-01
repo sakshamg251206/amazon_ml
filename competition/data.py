@@ -1,7 +1,7 @@
 """Readers for the challenge TSVs. Every column is a string; empty fields are ""."""
 import polars as pl
 
-from src.config import DATA_DIR
+from competition.config import DATA_DIR
 
 
 def _read_tsv(path) -> pl.DataFrame:

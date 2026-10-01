@@ -4,11 +4,11 @@ import csv
 import time
 from datetime import datetime
 
-from src import config
-from src.baseline_rule import rule_matches
-from src.data import read_ground_truth, read_source
-from src.decide import write_id_lists
-from src.metrics import macro_f05
+from competition import config
+from competition.baseline_rule import rule_matches
+from competition.data import read_ground_truth, read_source
+from competition.decide import write_id_lists
+from resolver.metrics import macro_f05
 
 LOG = config.ROOT / "experiments" / "log.csv"
 

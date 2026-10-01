@@ -14,8 +14,8 @@ import time
 
 import polars as pl
 
-from src.config import WORK_DIR
-from src.evalx import log_experiment, truth_pairs
+from competition.config import WORK_DIR
+from competition.evalx import log_experiment, truth_pairs
 
 COLS = ["entity_id", "country", "name_key", "hn", "name_ns", "addr"]
 

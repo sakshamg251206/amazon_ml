@@ -5,9 +5,9 @@ import shutil
 
 import polars as pl
 
-import src.pipeline as P
-from src.block import key_candidates
-from src.config import OUTPUT_DIR, WORK_DIR
+import competition.pipeline as P
+from resolver.block import key_candidates
+from competition.config import OUTPUT_DIR, WORK_DIR
 
 _orig_dir = P._dir
 P._dir = lambda split, name: _orig_dir(f"quick_{split}", name)  # -> work/pipe_quick_test/...

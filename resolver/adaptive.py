@@ -9,7 +9,7 @@ its own list) and on train S1 for validation.
 import polars as pl
 from rapidfuzz import fuzz
 
-from src.features import _fuzz
+from resolver.features import _fuzz
 
 SHARE = 0.001
 GEN = ["n_extra_generic", "n_extra_rare", "n_miss_generic", "n_miss_rare", "core_tset", "core_eq"]
