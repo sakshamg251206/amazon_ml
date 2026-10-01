@@ -119,7 +119,7 @@ async def _read_upload(f: UploadFile | None, label: str):
     try:
         df = read_tsv(data)
     except Exception as e:
-        raise HTTPException(422, f"{label}: cannot read as a tab-separated file ({e})")
+        raise HTTPException(422, f"{label}: cannot read as a tab-separated file ({e})") from e
     if df.height > config.MAX_UPLOAD_ROWS:
         raise HTTPException(413, f"{label} has {df.height:,} rows; the demo limit is {config.MAX_UPLOAD_ROWS:,}")
     return df
@@ -133,7 +133,7 @@ async def create_job(source1: UploadFile = File(...), source2: UploadFile = File
     try:
         ds = Dataset.from_frames(*frames, truth=gt, name=source1.filename or "upload")
     except ValueError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from e
     return STATE["jobs"].submit(ds, ds.name).public()
 
 

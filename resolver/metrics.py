@@ -4,7 +4,8 @@ With P = TP/|pred| and R = TP/|true|, F0.5 = 1.25*P*R / (0.25*P + R), which simp
 1.25*TP / (|pred| + 0.25*|true|). A singleton (no true matches) scores 1 only for an empty
 prediction.
 """
-from collections.abc import Mapping, Set as AbstractSet
+from collections.abc import Mapping
+from collections.abc import Set as AbstractSet
 
 _EMPTY: frozenset[str] = frozenset()
 

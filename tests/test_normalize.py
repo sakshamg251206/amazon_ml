@@ -1,4 +1,4 @@
-from resolver.normalize import clean, name_key, house_no
+from resolver.normalize import clean, house_no, name_key
 
 
 def test_clean_transliterates():
@@ -28,7 +28,7 @@ def test_house_no_variants():
     assert house_no("") == ""
 
 
-from resolver.normalize import name_tokens, nums, addr_parts, is_nonlatin
+from resolver.normalize import addr_parts, is_nonlatin, name_tokens, nums
 
 
 def test_name_tokens_strips_domains_tags_legal_and_keeps_order():

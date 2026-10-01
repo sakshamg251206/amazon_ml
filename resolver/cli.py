@@ -70,12 +70,13 @@ def cmd_resolve(a) -> None:
 
 
 def cmd_demo(a) -> None:
+    import joblib
+
     from resolver.engine import Matcher
     from resolver.index import ResolverIndex
     from resolver.io import Dataset
     from resolver.synth.generator import SynthConfig, generate
     from resolver.train import evaluate, fit
-    import joblib
     t0 = time.time()
     data = Path(a.data)
     if a.regenerate or not (data / "train" / "train_source1.tsv").exists():

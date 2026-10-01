@@ -1,0 +1,8 @@
+# One-click deploy on Render: New + > Blueprint > pick this repository.
+services:
+  - type: web
+    name: entity-resolver
+    runtime: docker
+    plan: free             # the demo idles at ~260 MB; use starter (2 GB) for large uploads
+    healthCheckPath: /api/health
+    autoDeploy: true
