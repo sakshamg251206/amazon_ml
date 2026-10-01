@@ -49,7 +49,7 @@ def components(recs: pl.DataFrame, max_iter: int = 30) -> pl.DataFrame:
 
 def collective(scored: pl.DataFrame, comp: pl.DataFrame) -> pl.DataFrame:
     """scored: (s1, rec, p) stage-1 probabilities; comp: (entity_id, comp) -> (s1, rec, *COLLECTIVE)."""
-    s = scored.select("s1", "rec", pl.col("p").alias("p1"))
+    s = scored.select("s1", "rec", pl.col("p").alias("p1")).sort("s1", "rec")  # canonical order for ordinal ranks
     s = s.with_columns(
         pl.col("p1").rank("ordinal", descending=True).over("rec").alias("p1_rank_rec"),
         pl.col("p1").sum().over("rec").alias("p1_sum_rec"),

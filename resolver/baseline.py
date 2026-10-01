@@ -24,3 +24,9 @@ def rule_matches(s1: pl.DataFrame, recs: pl.DataFrame) -> dict[str, list[str]]:
     for s1_id, rec_id in pairs.iter_rows():
         out.setdefault(s1_id, []).append(rec_id)
     return out
+
+
+def rule_pairs(s1: pl.DataFrame, recs: pl.DataFrame) -> pl.DataFrame:
+    """The rule baseline as (s1, rec) pairs."""
+    rows = [(s, r) for s, rs in rule_matches(s1, recs).items() for r in rs]
+    return pl.DataFrame(rows, schema={"s1": pl.String, "rec": pl.String}, orient="row")

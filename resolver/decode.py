@@ -12,12 +12,12 @@ EF_C, EF_FLOOR = 0.15, 0.05  # E-D1: M1 0.9420 -> 0.9429, M2 0.9471 -> 0.9482 (o
 
 
 def exclusive(scored: pl.DataFrame) -> pl.DataFrame:
-    return scored.sort("p", descending=True).group_by("rec", maintain_order=True).first()
+    return scored.sort(["p", "s1"], descending=[True, False], maintain_order=True).group_by("rec", maintain_order=True).first()
 
 
 def ef_decode(ex: pl.DataFrame, c: float = EF_C, floor: float = EF_FLOOR) -> pl.DataFrame:
     cols = ex.columns
-    d = ex.filter(pl.col("p") >= floor).sort(["s1", "p"], descending=[False, True]).with_columns(
+    d = ex.filter(pl.col("p") >= floor).sort(["s1", "p", "rec"], descending=[False, True, False]).with_columns(
         pl.int_range(1, pl.len() + 1).over("s1").alias("_k"),
         pl.col("p").cum_sum().over("s1").alias("_P"),
         pl.col("p").sum().over("s1").alias("_E"),

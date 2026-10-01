@@ -7,3 +7,6 @@ output/
 __pycache__/
 .pytest_cache/
 .superpowers/
+artifacts/
+data/
+node_modules/

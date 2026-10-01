@@ -24,7 +24,7 @@ def pair_features(pairs: pl.DataFrame, s1: pl.DataFrame, recs: pl.DataFrame) -> 
     """pairs: (s1, rec, [cos_name, cos_addr, cos_comb, in_keys]). Returns pairs + feature columns."""
     a = s1.select(ATTRS).rename({c: f"{c}_1" for c in ATTRS}).rename({"entity_id_1": "s1"})
     b = recs.select(ATTRS).rename({c: f"{c}_2" for c in ATTRS}).rename({"entity_id_2": "rec"})
-    d = pairs.join(a, on="s1").join(b, on="rec")
+    d = pairs.join(a, on="s1").join(b, on="rec").sort("s1", "rec")  # canonical order: ordinal ranks break ties by it
     f = d.with_columns(
         _fuzz(d["name_tok_1"], d["name_tok_2"], fuzz.ratio).alias("name_ratio"),
         _fuzz(d["name_tok_1"], d["name_tok_2"], fuzz.token_set_ratio).alias("name_tset"),
