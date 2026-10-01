@@ -1,6 +1,6 @@
 # Project State
 
-> **v2.0 (Oct 2026):** the pipeline is now the `resolver` package with a web app, API, synthetic data and Docker deploy. See README.md and DECISIONS.md D22. The competition-era state below is unchanged; its commands now live under `competition/`.
+> **v2.0 (Oct 2026):** the pipeline is now the `resolver` package with a web app, API, synthetic data and Docker deploy. See README.md and DECISIONS.md D30. The competition-era state below is unchanged; its commands now live under `competition/`.
 
 **Last updated:** 26 Sep 2026, 18:35 IST
 **Branch:** `phase-2-experiments`

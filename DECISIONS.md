@@ -154,7 +154,87 @@ Each entry records the decision, the evidence behind it, and what it would cost 
 - **Generic lists are stable train → test:** India 238 / 237, US 470 / 471.
 - **Decision:** kept. v3 = v2 + generic features (`src/adaptive.py`, `features3`, `ens3g`).
 
-## D22 — Productise: one in-memory engine, synthetic data, web app (v2.0)
+## D22 — Canonical addresses (E-A1): pending stage 2
+
+- **What:** `src/address.py`. State and department names/codes are mapped to one canonical form (e.g. Gironde → nouvelle aquitaine, kansas → ks). Street words go through country-aware abbreviation maps (FR r → rue, bd → boulevard; US st → street). Three features: `ca_tset`, `ca_sort`, `ca_jacc`.
+- **M1 result:** out-of-fold **0.9606 vs 0.9594** (fold 0 −0.0006, fold 1 +0.0023; US +0.0018). Fails the both-folds rule at stage 1.
+- **Next:** stage 2 (`ens3gca`) decides. Test path: `features4` + `V3_CANON` in `src/pipeline.py`, off until validated.
+
+## D23 — Decoy-weighted stage 2 (E-P1): marginal
+
+- **What:** stage-2 LightGBM trained with decoy records weighted ×w. It is scored as-is, and in a world where every decoy is duplicated to mimic test's 2× decoy density.
+- **Result:**
+  - w=2: as-is −0.0004; doubled decoys +0.0009.
+  - w=3: as-is −0.0008; doubled decoys +0.0010.
+- **Decision:** not shipped. Superseded by D24.
+
+## D24 — Density-checked model consensus (E-C1) → `output/sub6_consensus/`
+
+- **Evidence (public repo mayankgoplani431-del, which reports leaderboard scores):**
+  - E02 0.964; S3 0.956 despite higher validation.
+  - Keeping only pairs both models predict: **0.969**.
+  - Removed pairs were about 81% false: test decoys are near-copies with a shifted house number, at 2× train density.
+- **Our label-free audit:**
+  - Vote pattern per test pair over [v1 ens, v2 ens, v3 ens, v2 M1], compared with validation OOF on the same patterns.
+  - Cell `111.` (all stage-2 ensembles accept, stage-1 rejects), US: **0.092 per S1 on test vs 0.018 on validation (×5.2)**; house-number mismatch 0.90 vs 0.63.
+  - India: every cell ≈ ×1.0. France `111.`: 1.3–3.4× the US/India validation rates; 34% hn mismatch vs 1% in agreed France pairs.
+  - Cause: stage-2 collective features are raw counts of competing records (`claims_s1`, `p1_sum_rec`, `n_twins`), so they shift with decoy density.
+- **Estimate:**
+  - Per-cell test precision = validation precision × (validation rate ÷ test rate). US `111.` ≈ 0.17.
+  - Monte Carlo per-S1 F0.5 vs sub3d (LB 0.952): sub4d +0.0037; **sub4d − US `111.` +0.0087** (US + India only).
+- **Decision:** `sub6_consensus` = sub4d minus `111.` pairs in US (61,315) and France (15,438). Matches ⊆ candidates (0 violations); validator PASS.
+- **Unmeasurable:** France is a bet backed by the house-number signature only.
+
+## D25 — Canonical addresses kept at stage 2; 7-model combination (E-C2) → `output/sub7_stack/`
+
+- **Stage 2 with CA (`ens3gca`):** mean3 **0.9639 vs 0.9623** (0.9593 / 0.9676 vs 0.9579 / 0.9658; both folds up). `V3_CANON = True`. Test outputs: `sub5d` (ensemble) and `sub5b` (M1).
+- **Plain vote stacker:** 7 voters, q per (country, vote pattern), cross-fitted. Scores **0.9630, below the best voter** (v5ens 0.9639) in both folds, so it was not used.
+- **Shipped rule (`sub7`):**
+  - Start from v5ens; remove pairs whose pattern is over-represented on test, where q × min(1, val rate ÷ test rate) < T (0.762). The validation rate uses an upper bound (n + 2√n + 3).
+  - On validation this is exactly v5ens; removals happen only on test.
+  - Removed: US 75.7k, India 35.2k, France 28.2k. Validator PASS against its own candidates.
+- **Label-free estimate vs sub3d (LB 0.952), a ranking not a score:** sub4d +0.0033, sub5d raw +0.0027, sub6 +0.0087, **sub7 +0.0100**.
+- **Disk:** the disk filled and processes were killed. Identical `candidate_pairs.tsv` copies in `output/` are now hard links.
+
+## D26 — Twin features collapse at test decoy density (E-P2) → stage 2 without twins
+
+- **World x2 (labelled):**
+  - Every decoy that is a candidate of a validation S1 is duplicated; twin components and all collective features are recomputed.
+  - Stage-2 LightGBM: **all 0.9628 → 0.8609**; no_counts 0.9630 → 0.8539; **no_twins 0.9606 → 0.9505**; no_s1_side 0.9591 → 0.9528.
+- **Why:** decoy businesses have their own copies. They agree as twins, and in training twin agreement meant a true match.
+- **Label-free test check (pairs per S1, test ÷ validation, US):**
+  - stage-1 models 1.015–1.018; stage-2 ensembles with twins 1.036–1.063;
+  - **no-twins ensemble 1.015**. India 1.011.
+- The no-twins ensemble (`ens3gca_no_twins`, mean3 0.9620) → `output/sub5notwinsd_ens_ef/`.
+
+## D27 — Vocabulary class of unmatched name tokens (E-T3): rejected
+
+- **Idea:** decoys swap in a *real* word ("daniels hawk" → "hanners hawk" at the same address); true copies add typos seen nowhere else. On same-address pairs the match rate is 0.82 without a real-word extra vs 0.22–0.37 with one.
+- **M1 result:** 0.9610 vs 0.9606 (fold 0 +0.0017, fold 1 −0.0003); gain share 0.1%. Existing name similarity already carries the signal.
+- **Decision:** off. Code: `src/vocab.py`, `features5`, `V3_VOCAB = False`.
+
+## D28 — Entity-group gains replace twins (E-G2)
+
+- **Group of (s1, r):** the S1's other candidates that are near-copies of r (name ≥ 85, address ≥ 80 or empty, same house number when both present).
+- **Features are gains, never counts:** best sibling minus self for name, address and p1. A duplicated decoy adds a gain of 0.
+- **Stage-2 LightGBM:** **0.9620** (0.9569 / 0.9659) vs no_twins 0.9606 (0.9559 / 0.9644), both folds up. x2 world **0.9534** vs 0.9505.
+- **Test:** 33.8% of pairs have a better sibling vs 35.5% on validation, so the features are density-stable.
+- **Decision:** kept, `V3_STAGE2 = "no_twins_grp"`. Code: `src/groups.py`, decide stage chunked by S1.
+
+## D29 — Legal-form agreement (E-T4): kept → FINAL `output/sub10notwinsgrpb_m1_ef/`
+
+- **Why:** half of the train S1 (1.11M of 2.2M) share their normalised name with another S1. They are different businesses that differ only in stripped tokens ("Crandall Enterprises P.C." vs "... Inc"). The legal form was invisible to every feature.
+- **Features:** `src/legal.py` on raw names: `lf_equal`, `lf_diff`, `lf_one_side`.
+- **M1 result:** **0.9655 vs 0.9606** (0.9604 / 0.9689; precision 0.9871, recall 0.9304).
+  - The dummy-column control reproduces the baseline exactly (0.9606).
+  - Gain share is tiny because the features break ties between rival S1 in exclusive assignment.
+- **Final file:** legal-form M1 alone (`model_m1f`, `feat6`). It is the best validated model and more density-robust than every stage-2 ensemble (US test/val pairs per S1 1.010, India 1.003).
+- **Checks:** validator PASS; 0 matches outside candidates.
+- **Not finished (disk-full crashes):**
+  - stage 2 on legal-form M1 (`ens3gcal_no_twins_grp`);
+  - E-T5 raw-name similarity (`src/rawname.py`, `experiments/e_t5_rawname.py`).
+
+## D30 — Productise: one in-memory engine, synthetic data, web app (v2.0)
 
 - **Decision:** the validated design (D4–D18, E-T2) becomes the `resolver` package: one in-memory flow `prepare → score → decode`, used by the CLI, the API, the web app and single-record matching. The 8 GB disk-streaming drivers stay in `competition/` for the full real data.
 - **Kept exactly:** partitions, blocking depths (10/20/10, keep 5), the 54 stage-1 features, the 10 collective features, the three stage-2 members and their configs, pruning at p1 ≥ 0.01, and expected-F decoding.
@@ -168,3 +248,4 @@ Each entry records the decision, the evidence behind it, and what it would cost 
   - held-out test 0.983, with France zero-shot at 0.979;
   - online matching agrees with batch resolution on 98% of 300 held-out records.
 - **Cost if wrong:** the synthetic data is easier than the real data, and stage 2 adds only +0.0002 on it. Real-data claims stay the D18 numbers.
+- **Not yet in the engine:** the phase-2 findings D22–D29 (canonical addresses, entity groups, legal-form agreement at 0.9655, and dropping twin features because they collapse at test decoy density, D26). The engine implements the D18 design; porting E-T4 and the no-twins stage 2 is the next step.

@@ -16,16 +16,19 @@ from competition.config import WORK_DIR
 from competition.evalx import log_experiment
 from resolver.features import FEATURES
 from resolver.adaptive import GEN
+from competition.address import CA
+from competition.vocab import VOC
+from competition.legal import LF
 from resolver.features2 import NEW
 
 TR = ["tr_name_tset", "tr_name_ratio", "tr_name_jw", "tr_n_tok_extra"]
 
 
-def configure(src: str = "e_f2b", ens: str = "ens2") -> None:
+def configure(src: str = "e_f2b", ens: str = "ens2", coll: list[str] = COLLECTIVE) -> None:
     """src = validation feature/OOF prefix: e_f2b (v2), or e.g. e_b5_tr (v3: E-B5 + E-T1)."""
     E.ENS = WORK_DIR / ens
     E.DATA = E.ENS / "data.parquet"
-    E.COLS = FEATURES + NEW + (TR if "_tr" in src else []) + (GEN if "_gen" in src else []) + COLLECTIVE
+    E.COLS = FEATURES + NEW + (TR if "_tr" in src else []) + (GEN if "_gen" in src else []) + (CA if "_ca" in src else []) + (VOC if "_voc" in src else []) + (LF if "_lf" in src else []) + coll
     E.SRC_OOF = WORK_DIR / f"{src}_m1_oof.parquet"
     E.SRC_FEATS = WORK_DIR / f"{src}_feats.parquet"
     E.FINAL = {"lgbm": "b", "extratrees": "a", "mlp": "b"}
@@ -59,6 +62,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 2:
+    if len(sys.argv) > 3:   # optional 3rd arg: stage-2 feature set from E-P2; data.parquet is shared via symlink
+        from experiments.e_p2_density import SETS
+        configure(sys.argv[1], sys.argv[2], SETS[sys.argv[3]])
+    elif len(sys.argv) > 2:
         configure(sys.argv[1], sys.argv[2])
     main()

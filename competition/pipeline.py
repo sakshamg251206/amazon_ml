@@ -21,6 +21,10 @@ from competition.config import OUTPUT_DIR, SEED, WORK_DIR
 from resolver.decode import ef_decode, exclusive
 from resolver.features import FEATURES, pair_features
 from resolver.adaptive import GEN, generic_features, generic_tokens
+from competition.address import CA, canon_addr, canon_features
+from competition.vocab import VOC, token_df, vocab_features
+from competition.groups import GRP, group_features
+from competition.legal import LF, legal_features, legal_forms
 from resolver.features2 import NEW, competition_features, diff_features, mask_keyonly, s1_maxima
 from resolver.partition import infer_state, learn_aliases, s1_state
 
@@ -45,6 +49,23 @@ _V3_SRC = ("e_b5" if V3_NOSTATE else "e_f2b") + ("_tr" if V3_TRANSLIT else "") +
 V3 = dict(feat="feat3", m1=WORK_DIR / "model_m1c.txt",
           m1_cols=FEATURES + NEW + (TR if V3_TRANSLIT else []) + (GEN if V3_GENERIC else []),
           ens="ens3" if V3_NOSTATE else "ens3g", tag="sub4", train=WORK_DIR / f"{_V3_SRC}_feats.parquet")
+V3_CANON = True  # E-A1 kept at stage 2 (ens3gca mean3 0.9639 vs 0.9623, both folds up); canonical addresses: switches --v3 to feat4 / model_m1d / ens3gca / sub5 once validated
+if V3_CANON:
+    V3 = dict(V3, feat="feat4", m1=WORK_DIR / "model_m1d.txt", m1_cols=V3["m1_cols"] + CA, ens=V3["ens"] + "ca", tag="sub5",
+              train=WORK_DIR / f"{_V3_SRC}_ca_feats.parquet")
+V3_VOCAB = False  # E-T3 vocabulary class of unmatched name tokens: feat5 / model_m1e / ens3gcav / sub9 once validated
+if V3_VOCAB:
+    V3 = dict(V3, feat="feat5", m1=WORK_DIR / "model_m1e.txt", m1_cols=V3["m1_cols"] + VOC, ens=V3["ens"] + "v", tag="sub9",
+              train=WORK_DIR / f"{_V3_SRC}_ca_voc_feats.parquet")
+V3_LEGAL = True  # E-T4 kept: M1 0.9655 vs 0.9606 (0.9604 / 0.9689, both folds; dummy-column control = 0.9606); legal-form agreement from raw names: feat6 (= feat4 + LF) / model_m1f / ens3gcal / sub10 once validated
+if V3_LEGAL:
+    V3 = dict(V3, feat="feat6", m1=WORK_DIR / "model_m1f.txt", m1_cols=V3["m1_cols"] + LF, ens=V3["ens"] + "l", tag="sub10",
+              train=WORK_DIR / f"{_V3_SRC}_ca_lf_feats.parquet")
+# E-P2: stage-2 feature set. Twin / S1-side count features collapse when decoys double (x2 world 0.86)
+V3_STAGE2 = "no_twins_grp"  # E-G2 kept (0.9620, x2 0.9534, both folds up). E-P2: as-is 0.9606, x2 0.9505 (all: 0.9628 / 0.8609); "all" | "no_twins" | "no_s1_side"  (ens dir gets the suffix; see experiments/e_p2_density.py)
+if V3_STAGE2 != "all":
+    from experiments.e_p2_density import SETS
+    V3 = dict(V3, ens=V3["ens"] + "_" + V3_STAGE2, coll=SETS[V3_STAGE2], tag=V3["tag"] + V3_STAGE2.replace("_", ""))
 
 
 def _dir(split: str, name: str):
@@ -209,6 +230,58 @@ def features3(split: str) -> None:
     print(f"features3 done in {time.time() - t0:.0f}s", flush=True)
 
 
+def features4(split: str) -> None:
+    """feat4 = feat3 + canonical-address similarity (E-A1). S1 canon once per country, records per bucket."""
+    t0 = time.time()
+    src, out = _dir(split, "feat3"), _dir(split, "feat4")
+    cols = ["entity_id", "country", "parts"]
+    c1 = pl.concat([canon_addr(_norm_country(split, 1, cols, c))
+                    for c in pl.read_parquet(WORK_DIR / f"norm/{split}_s1.parquet", columns=["country"])["country"].unique()])
+    recs = pl.concat([pl.scan_parquet(WORK_DIR / f"norm/{split}_s{x}.parquet").select(cols) for x in (2, 3)])
+    for b in range(N_BUCKETS):
+        path = out / f"b{b:02d}.parquet"
+        if path.exists():
+            continue
+        f = pl.read_parquet(src / f"b{b:02d}.parquet")
+        c2 = canon_addr(recs.filter((pl.col("entity_id").hash(SEED) % N_BUCKETS) == b).collect())
+        f.join(canon_features(f.select("s1", "rec"), c1, c2), on=["s1", "rec"], how="left").write_parquet(path)
+    print(f"features4 done in {time.time() - t0:.0f}s", flush=True)
+
+
+def features5(split: str) -> None:
+    """feat5 = feat4 + vocabulary class of unmatched name tokens (E-T3), DF fitted on this split's S1."""
+    t0 = time.time()
+    src, out = _dir(split, "feat4"), _dir(split, "feat5")
+    s1 = _norm(split, 1, ["entity_id", "country", "name_tok"])
+    df, gen = token_df(s1), generic_tokens(s1)
+    recs = pl.concat([pl.scan_parquet(WORK_DIR / f"norm/{split}_s{x}.parquet").select("entity_id", "name_tok") for x in (2, 3)])
+    for b in range(N_BUCKETS):
+        path = out / f"b{b:02d}.parquet"
+        if path.exists():
+            continue
+        f = pl.read_parquet(src / f"b{b:02d}.parquet")
+        rb = recs.filter((pl.col("entity_id").hash(SEED) % N_BUCKETS) == b).collect()
+        f.join(vocab_features(f.select("s1", "rec"), s1, rb, df, gen), on=["s1", "rec"], how="left").write_parquet(path)
+    print(f"features5 done in {time.time() - t0:.0f}s", flush=True)
+
+
+def features6(split: str) -> None:
+    """feat6 = feat4 + legal-form agreement (E-T4) from the raw names of this split."""
+    from competition.config import DATA_DIR
+    t0 = time.time()
+    src, out = _dir(split, "feat4"), _dir(split, "feat6")
+    raw = lambda x: pl.read_csv(DATA_DIR / split / f"{split}_source{x}.tsv", separator="\t", quote_char=None, columns=["entity_id", "business_name"])
+    lf1 = legal_forms(raw(1))
+    lf2 = legal_forms(pl.concat([raw(2), raw(3)]))
+    for b in range(N_BUCKETS):
+        path = out / f"b{b:02d}.parquet"
+        if path.exists():
+            continue
+        f = pl.read_parquet(src / f"b{b:02d}.parquet")
+        f.join(legal_features(f.select("s1", "rec"), lf1, lf2), on=["s1", "rec"], how="left").write_parquet(path)
+    print(f"features6 done in {time.time() - t0:.0f}s", flush=True)
+
+
 def train(v2: bool = False, v3: bool = False) -> None:
     cfg = V3 if v3 else V2 if v2 else V1
     feats = pl.read_parquet(cfg["train"], columns=cfg["m1_cols"] + ["y"])
@@ -223,8 +296,13 @@ def _write(split: str, matches: pl.DataFrame, out_dir) -> None:
     ids = pl.read_parquet(WORK_DIR / f"norm/{split}_s1.parquet", columns=["entity_id"]) \
             .rename({"entity_id": "source1_entity_id"})
     out_dir.mkdir(parents=True, exist_ok=True)
+    shared = WORK_DIR / f"pipe_{split}" / "candidate_pairs.tsv"   # same blocking for every version: write once, hard-link
     for name, col, pairs in (("matching_results.tsv", "matched_entity_ids", matches.lazy()),
                              ("candidate_pairs.tsv", "candidate_entity_ids", cands)):
+        if name == "candidate_pairs.tsv" and shared.exists():
+            (out_dir / name).unlink(missing_ok=True)
+            (out_dir / name).hardlink_to(shared)
+            continue
         lists = pairs.group_by("s1").agg(pl.col("rec").unique().sort().str.join(",").alias(col)) \
                      .rename({"s1": "source1_entity_id"}).collect()
         ids.join(lists, on="source1_entity_id", how="left", maintain_order="left").fill_null("") \
@@ -252,7 +330,7 @@ def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False, v3
         if m2:  # stage 2 only needs pairs with p1 >= PRUNE (validated in E-M2b)
             f = f.filter(pl.col("p") >= PRUNE)
             f.write_parquet(s2_dir / path.name)
-            pruned.append(f.select("s1", "rec", "p"))
+            pruned.append(f.select("s1", "rec", "p", "name_tset", "addr_tset"))
         else:  # buckets hold whole records, so the per-record argmax is exact inside a bucket
             ex.append(exclusive(f.select("s1", "rec", "p")))
     if m2:
@@ -261,8 +339,16 @@ def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False, v3
         recs = pl.concat([_norm(split, s, ["entity_id", "country", "name_key", "name_ns", "hn", "addr"]) for s in (2, 3)])
         comp = components(recs)
         del recs
-        col = collective(pl.concat(pruned), comp).with_columns(pl.col(c).cast(pl.Float32) for c in COLLECTIVE)
-        del comp, pruned
+        pruned = pl.concat(pruned)
+        col = collective(pruned.select("s1", "rec", "p"), comp).with_columns(pl.col(c).cast(pl.Float32) for c in COLLECTIVE)
+        del comp
+        if any(c in GRP for c in cfg.get("coll", [])):   # E-G2 entity-group gains, exact per S1 -> chunk by S1
+            recs_g = pl.concat([_norm(split, s, ["entity_id", "name_tok", "addr", "hn"]) for s in (2, 3)]) \
+                       .join(pruned.select(pl.col("rec").alias("entity_id")).unique(), on="entity_id")
+            grp = pl.concat([group_features(pruned.filter(pl.col("s1").hash(SEED) % 8 == k).rename({"p": "p1"}), recs_g) for k in range(8)])
+            col = col.join(grp, on=["s1", "rec"], how="left").with_columns(pl.col(c).fill_null(0) for c in GRP)
+            del recs_g, grp
+        del pruned
         if ens:
             import joblib
             ens_dir = WORK_DIR / cfg["ens"]
@@ -272,7 +358,7 @@ def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False, v3
             model2 = lgb.Booster(model_file=str(MODEL_M2))
         for path in sorted(s2_dir.glob("*.parquet")):
             f = pl.read_parquet(path).drop("p").join(col, on=["s1", "rec"])
-            X = f.select(cfg["m1_cols"] + COLLECTIVE).to_numpy().astype(np.float32)
+            X = f.select(cfg["m1_cols"] + cfg.get("coll", COLLECTIVE)).to_numpy().astype(np.float32)
             if ens:
                 p2 = sum(w * models[n].predict_proba(X)[:, 1] for n, w in weights.items())
             else:
@@ -290,7 +376,7 @@ def decide(split: str, m2: bool = False, ens: bool = False, v2: bool = False, v3
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="test", choices=["train", "test"])
-    ap.add_argument("--stage", required=True, choices=["block", "features", "features2", "nostate", "features3", "train", "decide", "all"])
+    ap.add_argument("--stage", required=True, choices=["block", "features", "features2", "nostate", "features3", "features4", "features5", "features6", "train", "decide", "all"])
     ap.add_argument("--v3", action="store_true", help="use feat3 / model_m1c / ens3 (E-B5 + E-T1 per V3_* flags)")
     ap.add_argument("--v2", action="store_true", help="use the E-F2 feature set (feat2, model_m1b, ens2)")
     ap.add_argument("--m2", action="store_true", help="decide with the stage-2 (collective) model")
@@ -300,7 +386,7 @@ def main() -> None:
     for s in stages:
         {"block": lambda: block(a.split), "features": lambda: features(a.split),
          "features2": lambda: features2(a.split), "nostate": lambda: nostate(a.split),
-         "features3": lambda: features3(a.split), "train": lambda: train(a.v2, a.v3),
+         "features3": lambda: features3(a.split), "features4": lambda: features4(a.split), "features5": lambda: features5(a.split), "features6": lambda: features6(a.split), "train": lambda: train(a.v2, a.v3),
          "decide": lambda: decide(a.split, a.m2, a.ens, a.v2, a.v3)}[s]()
 
 

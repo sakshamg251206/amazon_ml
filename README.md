@@ -4,7 +4,7 @@
 
 This repository holds the full solution as a working product:
 
-- **A validated ML pipeline.** Label-free partitioning, TF-IDF + exact-key blocking, 54 engineered features, a two-stage LightGBM / ExtraTrees / MLP matcher, and expected-F0.5 decoding. It scored **0.9614 macro F0.5 out-of-fold on the real competition data**, up from 0.595 for a rule baseline.
+- **A validated ML pipeline.** Label-free partitioning, TF-IDF + exact-key blocking, 54 engineered features, a two-stage LightGBM / ExtraTrees / MLP matcher, and expected-F0.5 decoding. It scored **0.9614 macro F0.5 out-of-fold on the real competition data** (0.9655 with the later legal-form features), up from 0.595 for a rule baseline.
 - **A web app and API.** Resolve a single messy record live and see *why*; audit every resolved entity against ground truth; upload whole datasets and download validated submission files; inspect the model's evaluation.
 - **A synthetic data generator.** It produces data in the exact challenge format, so everything runs end to end without the (non-redistributable) competition data, including a country the model never sees in training.
 
@@ -53,9 +53,11 @@ Validated out-of-fold on 414k reference businesses in 19 whole held-out states, 
 | LightGBM, 34 features | 0.9420 |
 | + competition / difference features | 0.9585 |
 | + adaptive generic / rare vocabulary | 0.9594 |
-| **+ stage-2 collective ensemble, expected-F decoding** | **0.9614** |
+| + stage-2 collective ensemble, expected-F decoding | 0.9614 |
+| + canonical addresses at stage 2 (E-A1) | 0.9639 |
+| **Legal-form agreement, stage 1 (E-T4): final competition submission** | **0.9655** |
 
-Blocking recall was 0.969 at 31 candidates per reference (oracle ceiling 0.990). `research/f05-gap/` holds the error audit and literature review behind each step.
+Blocking recall was 0.969 at 31 candidates per reference (oracle ceiling 0.990). `research/f05-gap/` holds the error audit and literature review behind each step. The product engine in `resolver/` implements the 0.9614 design; the later phase-2 features (D22–D29) live in `competition/` and are not yet ported (see D30).
 
 ### Synthetic demo data (this deployment, reproducible with `python -m resolver demo`)
 

@@ -48,6 +48,12 @@ def build() -> None:
     col = collective(scored, comp).with_columns(pl.col(c).cast(pl.Float32) for c in COLLECTIVE)
     del comp, scored
     d = pl.scan_parquet(SRC_FEATS).join(col.lazy(), on=["s1", "rec"]).collect()
+    from competition.groups import GRP, group_features
+    if any(c in GRP for c in COLS):   # E-G2 entity-group gains from this stage-1's p1
+        recs = pl.concat([pl.read_parquet(WORK_DIR / f"norm/train_s{s}.parquet", columns=["entity_id", "name_tok", "addr", "hn"]) for s in (2, 3)]) \
+                 .join(d.select(pl.col("rec").alias("entity_id")).unique(), on="entity_id")
+        d = d.join(group_features(d.select("s1", "rec", "p1", "name_tset", "addr_tset"), recs), on=["s1", "rec"], how="left")
+        del recs
     parts = sorted(set(d.select("country", "state").unique().rows()))
     fold_of = {p: int(f) for p, f in zip(parts, np.random.default_rng(SEED).permutation(len(parts)) % 2)}  # M1 folds
     d = d.join(pl.DataFrame({"country": [p[0] for p in parts], "state": [p[1] for p in parts],
