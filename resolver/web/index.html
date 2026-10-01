@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entity Resolver</title>
+  <meta name="description" content="Business entity resolution across noisy multi-source records: blocking, a two-stage learned matcher and F0.5-optimal decoding, with explanations.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232a78d6'/><circle cx='11' cy='12' r='4' fill='white'/><circle cx='21' cy='12' r='4' fill='white' opacity='.7'/><circle cx='16' cy='21' r='4' fill='white' opacity='.85'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)"/><circle cx="11" cy="12" r="4" fill="#fff"/><circle cx="21" cy="12" r="4" fill="#fff" opacity=".7"/><circle cx="16" cy="21" r="4" fill="#fff" opacity=".85"/></svg>
+      <div>Entity Resolver<small>Amazon ML Challenge 2026 · business entity resolution</small></div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="match" aria-selected="true">Match</button>
+      <button role="tab" data-tab="explore" aria-selected="false">Explore</button>
+      <button role="tab" data-tab="batch" aria-selected="false">Batch</button>
+      <button role="tab" data-tab="model" aria-selected="false">Model</button>
+    </nav>
+    <button class="icon-btn" id="theme" title="Toggle theme" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <a class="icon-btn" href="https://github.com/sakshamg251206/amazon_ml" target="_blank" rel="noopener" title="Source on GitHub" aria-label="Source on GitHub">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.4 11.4 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A11.5 11.5 0 0 0 12 .5z"/></svg>
+    </a>
+  </div>
+</header>
+
+<main>
+  <!-- ================================================================ MATCH -->
+  <section id="tab-match">
+    <div class="page-head">
+      <h1>Find the business behind a messy record</h1>
+      <p>Type a record as it might arrive from a partner feed: abbreviations, typos, missing pieces, another script. It is matched against
+        <span id="ref-count">the reference</span> with the same pipeline that resolves whole datasets, and every decision comes with its evidence.</p>
+    </div>
+    <div class="grid-2">
+      <form class="card pad stack" id="match-form" autocomplete="off">
+        <label class="field">Business name<input name="name" id="q-name" placeholder="e.g. Sharma Textiles Pvt. Ltd." required maxlength="300"></label>
+        <label class="field">Address<input name="address" id="q-addr" placeholder="e.g. No. 12, M.G. Rd, Pune - 411001" maxlength="500"></label>
+        <label class="field">Country<select name="country" id="q-country"></select></label>
+        <div class="row"><button class="btn" type="submit" id="match-btn">Resolve record</button><span class="muted small" id="match-time"></span></div>
+        <div>
+          <h3 style="margin-top:6px">Try a record from the held-out feed</h3>
+          <div class="chips" id="examples"></div>
+        </div>
+      </form>
+      <div id="match-out">
+        <div class="card empty">
+          <p style="margin:0 0 6px;font-weight:600;color:var(--text-2)">No record resolved yet</p>
+          <p class="small" style="margin:0">Pick an example or type your own. France was never seen in training, so try a French record too.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ EXPLORE -->
+  <section id="tab-explore" class="hidden">
+    <div class="page-head">
+      <h1>Explore resolved entities</h1>
+      <p>Every reference business in the held-out test split, with the cluster of records the model assigned to it. Ground truth is shown so you can audit
+        correct matches, false merges and misses.</p>
+    </div>
+    <div class="card pad">
+      <div class="row" style="margin-bottom:12px">
+        <input class="input" id="ex-q" placeholder="Search name, address or id…" style="max-width:300px;margin:0">
+        <div class="seg" id="ex-country"></div>
+        <div class="seg" id="ex-outcome">
+          <button data-v="" aria-pressed="true">All</button>
+          <button data-v="exact">Exact</button>
+          <button data-v="errors">Errors</button>
+          <button data-v="false_merge">False merge</button>
+          <button data-v="missed_match">Missed</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table class="data" id="ex-table"></table></div>
+      <div class="pager"><span id="ex-count"></span><span class="row"><button class="btn ghost" id="ex-prev">Previous</button><button class="btn ghost" id="ex-next">Next</button></span></div>
+    </div>
+  </section>
+
+  <!-- ================================================================ BATCH -->
+  <section id="tab-batch" class="hidden">
+    <div class="page-head">
+      <h1>Resolve a whole dataset</h1>
+      <p>Upload the three sources in the challenge format (tab-separated: <span class="mono">entity_id, business_name, business_address, country</span>).
+        You get <span class="mono">matching_results.tsv</span> and <span class="mono">candidate_pairs.tsv</span>, validated against the submission rules,
+        and a score if you include ground truth.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card pad stack">
+        <h2>Upload</h2>
+        <div class="drop" data-key="source1"><div><b>Source 1</b> <span class="muted small">reference</span><div class="fname">tsv · required</div></div><label class="btn ghost">Choose<input type="file" accept=".tsv,.txt,.csv"></label></div>
+        <div class="drop" data-key="source2"><div><b>Source 2</b><div class="fname">tsv · required</div></div><label class="btn ghost">Choose<input type="file" accept=".tsv,.txt,.csv"></label></div>
+        <div class="drop" data-key="source3"><div><b>Source 3</b><div class="fname">tsv · required</div></div><label class="btn ghost">Choose<input type="file" accept=".tsv,.txt,.csv"></label></div>
+        <div class="drop" data-key="ground_truth"><div><b>Ground truth</b> <span class="muted small">optional</span><div class="fname">scores the run</div></div><label class="btn ghost">Choose<input type="file" accept=".tsv,.txt,.csv"></label></div>
+        <div class="row"><button class="btn" id="job-run" disabled>Resolve upload</button></div>
+        <hr style="border:0;border-top:1px solid var(--border);width:100%">
+        <h2>No data at hand?</h2>
+        <p class="sub" style="margin:0">Run the French slice of the test feed: a country the model never saw in training (1,500 references, ~5,600 records).</p>
+        <div class="row"><button class="btn ghost" id="job-sample">Run the sample</button><a class="small" href="/api/sample.zip">Download sample files</a></div>
+      </div>
+      <div id="job-out"><div class="card empty"><p style="margin:0 0 6px;font-weight:600;color:var(--text-2)">No job yet</p><p class="small" style="margin:0">Results appear here: progress, validation, metrics, a preview and the download.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ================================================================ MODEL -->
+  <section id="tab-model" class="hidden">
+    <div class="page-head">
+      <h1>How it works and how well</h1>
+      <p>Trained on US and India records, evaluated out-of-fold by state partition and on a held-out test split that adds France.
+        All numbers on this page come from this deployment's own training report.</p>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="card pad" style="margin-bottom:20px">
+      <h2>Pipeline</h2>
+      <p class="sub">Seven stages, from raw text to F0.5-optimal decisions. Each is a module in <span class="mono">resolver/</span>.</p>
+      <div class="pipeline">
+        <div class="st"><b>Normalise</b>Scripts to ASCII, legal forms stripped, house numbers and address parts extracted.</div>
+        <div class="st"><b>Partition</b>Label-free state/region inference: aliases learned from the reference itself.</div>
+        <div class="st"><b>Block</b>TF-IDF top-5 per record inside its region, plus country-wide exact keys.</div>
+        <div class="st"><b>Featurise</b>54 features: fuzzy, numeric, competition between candidates, adaptive vocabulary.</div>
+        <div class="st"><b>Stage 1</b>LightGBM pair scorer.</div>
+        <div class="st"><b>Stage 2</b>+10 collective / twin-graph features; mean of LightGBM, ExtraTrees and MLP.</div>
+        <div class="st"><b>Decode</b>Each record to its best reference, then expected-F0.5 per reference.</div>
+      </div>
+    </div>
+    <div class="grid-cols model-grid">
+      <div class="card pad"><h2>Improvement ladder</h2><p class="sub">Macro F0.5, out-of-fold on the training split. Each step adds one idea.</p><div class="chart" id="ch-ladder"></div></div>
+      <div class="card pad"><h2>Precision vs. threshold</h2><p class="sub">Held-out test, stage-2 probability with exclusive assignment. Expected-F decoding needs no threshold.</p><div class="legend" id="lg-curve"></div><div class="chart" id="ch-curve"></div></div>
+      <div class="card pad"><h2>By country</h2><p class="sub">Held-out test. France is zero-shot: no French record was used in training.</p><div class="chart" id="ch-country"></div></div>
+      <div class="card pad"><h2>Hard slices</h2><p class="sub">Held-out test, pair-level precision and recall.</p><div class="table-wrap"><table class="data" id="tb-slices"></table></div></div>
+      <div class="card pad wide"><h2>What the model relies on</h2><p class="sub">Stage-1 LightGBM split gain, top 12 features.</p><div class="chart" id="ch-imp"></div></div>
+      <div class="card pad wide"><h2>Blocking</h2><p class="sub">Candidate generation sets the ceiling: a pair never retrieved can never be matched.</p>
+        <div class="grid-cols" style="align-items:start"><div id="blocking"></div>
+        <div class="callout"><b>On the real competition data</b> this design scored <b>0.9614</b> macro F0.5 out-of-fold (414k references, 19 held-out states), up from 0.595 for the exact-key rule, with blocking recall 0.969. See <span class="mono">DECISIONS.md</span> for every experiment, including the rejected ones.</div></div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer>Synthetic demo data: generated, not real businesses. <a href="/docs">API docs</a> · <span id="ver"></span></footer>
+
+<div class="tip hidden" id="tip"></div>
+<script src="/static/app.js" type="module"></script>
+</body>
+</html>

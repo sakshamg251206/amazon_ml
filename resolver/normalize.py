@@ -59,3 +59,48 @@ def addr_parts(address: str) -> list[str]:
 def is_nonlatin(text: str) -> bool:
     """True if the text contains letters outside the Latin blocks (e.g. Devanagari, Tamil)."""
     return any(ch.isalpha() and ord(ch) > 0x024F for ch in text)
+
+
+# ---- frame-level normalisation (raw TSV columns -> every field the pipeline uses) ----
+NORM_COLS = ["entity_id", "country", "empty_addr", "name_tok", "addr", "parts", "nums", "nonlatin",
+             "name_key", "name_ns", "hn"]
+
+
+def _norm_rows(rows: tuple[list[str], list[str]]) -> dict[str, list]:
+    names, addrs = rows
+    out: dict[str, list] = {"name_tok": [], "addr": [], "parts": [], "nums": [], "nonlatin": []}
+    for n, a in zip(names, addrs):
+        out["name_tok"].append(" ".join(name_tokens(n)))
+        out["addr"].append(clean(a))
+        out["parts"].append(addr_parts(a))
+        out["nums"].append(nums(a))
+        out["nonlatin"].append(is_nonlatin(n))
+    return out
+
+
+def normalize_frame(df, workers: int = 1, chunk: int = 125_000):
+    """df: (entity_id, business_name, business_address, country) -> NORM_COLS.
+    Per-row Python is the slow part; `workers` > 1 spreads chunks over processes."""
+    import polars as pl
+    df = df.with_columns(pl.col("business_name", "business_address", "country").fill_null(""))
+    names, addrs = df["business_name"].to_list(), df["business_address"].to_list()
+    chunks = [(names[i:i + chunk], addrs[i:i + chunk]) for i in range(0, len(names), chunk)] or [([], [])]
+    if workers > 1 and len(chunks) > 1:
+        from multiprocessing import Pool
+        with Pool(workers) as pool:
+            parts = pool.map(_norm_rows, chunks)
+    else:
+        parts = [_norm_rows(c) for c in chunks]
+    cols = {k: [v for p in parts for v in p[k]] for k in parts[0]}
+    return df.select("entity_id", "country", (pl.col("business_address").str.strip_chars() == "").alias("empty_addr")).with_columns(
+        pl.Series("name_tok", cols["name_tok"], dtype=pl.String),
+        pl.Series("addr", cols["addr"], dtype=pl.String),
+        pl.Series("parts", cols["parts"], dtype=pl.List(pl.String)),
+        pl.Series("nums", cols["nums"], dtype=pl.List(pl.String)),
+        pl.Series("nonlatin", cols["nonlatin"], dtype=pl.Boolean),
+    ).with_columns(
+        pl.col("name_tok").str.split(" ").list.sort().list.unique(maintain_order=True)
+        .list.join(" ").alias("name_key"),
+        pl.col("name_tok").str.replace_all(" ", "").alias("name_ns"),
+        pl.col("nums").list.first().fill_null("").alias("hn"),
+    )

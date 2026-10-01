@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 from competition import config
-from competition.baseline_rule import rule_matches
+from resolver.baseline import rule_matches
 from competition.data import read_ground_truth, read_source
 from competition.decide import write_id_lists
 from resolver.metrics import macro_f05
